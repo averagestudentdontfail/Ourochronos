@@ -10,6 +10,7 @@ use crate::ast::{OpCode, Stmt, Program};
 use crate::core_types::Value;
 use std::iter::Peekable;
 use std::slice::Iter;
+use std::collections::HashMap;
 
 /// Tokens produced by the lexer.
 #[derive(Debug, Clone, PartialEq)]
@@ -118,7 +119,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             
             // Symbolic operators (single character words)
             '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '~' |
-            '<' | '>' | '=' | '!' => {
+            '<' | '>' | '=' | '!' | ';' => {
                 // Check for two-character operators
                 let mut op = String::new();
                 op.push(chars[i]);
@@ -151,6 +152,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
 /// Parser for OUROCHRONOS programs.
 pub struct Parser<'a> {
     tokens: Peekable<Iter<'a, Token>>,
+    constants: HashMap<String, u64>,
 }
 
 impl<'a> Parser<'a> {
@@ -158,16 +160,63 @@ impl<'a> Parser<'a> {
     pub fn new(tokens: &'a [Token]) -> Self {
         Self {
             tokens: tokens.iter().peekable(),
+            constants: HashMap::new(),
         }
     }
     
     /// Parse a complete program.
     pub fn parse_program(&mut self) -> Result<Program, String> {
+        // Parse declarations (MANIFEST)
+        while self.peek_word_eq("MANIFEST") {
+            self.parse_declaration()?;
+        }
+
         let mut stmts = Vec::new();
         while self.tokens.peek().is_some() {
             stmts.push(self.parse_stmt()?);
         }
         Ok(Program { body: stmts })
+    }
+
+    /// Parse a declaration: MANIFEST name = value;
+    fn parse_declaration(&mut self) -> Result<(), String> {
+        self.tokens.next(); // Consume MANIFEST
+
+        let name = match self.tokens.next() {
+            Some(Token::Word(w)) => w.clone(),
+            _ => return Err("Expected identifier after MANIFEST".to_string()),
+        };
+
+        // Expect '='
+        if !self.peek_word_eq("=") {
+             // Allow omitting '=' if user prefers just MANIFEST NAME VALUE; but spec says '='
+             // Let's check for symbolic '=' which is Token::Word("=")
+             match self.tokens.peek() {
+                 Some(Token::Word(w)) if w == "=" => { self.tokens.next(); },
+                 _ => return Err("Expected '=' in declaration".to_string()),
+             }
+        } else {
+             self.tokens.next();
+        }
+
+        // Expect value (simple integer for now)
+        let value = match self.tokens.next() {
+            Some(Token::Number(n)) => *n,
+            _ => return Err("Expected integer value in declaration".to_string()),
+        };
+
+        // Expect ';'
+        if !self.peek_word_eq(";") {
+             match self.tokens.peek() {
+                 Some(Token::Word(w)) if w == ";" => { self.tokens.next(); },
+                 _ => return Err("Expected ';' after declaration".to_string()),
+             }
+        } else {
+             self.tokens.next();
+        }
+
+        self.constants.insert(name, value);
+        Ok(())
     }
     
     /// Parse a single statement.
@@ -202,6 +251,7 @@ impl<'a> Parser<'a> {
             "OVER" => Ok(Stmt::Op(OpCode::Over)),
             "ROT" => Ok(Stmt::Op(OpCode::Rot)),
             "DEPTH" => Ok(Stmt::Op(OpCode::Depth)),
+            "PICK" | "PEEK" => Ok(Stmt::Op(OpCode::Pick)),
             
             // Arithmetic
             "ADD" | "+" => Ok(Stmt::Op(OpCode::Add)),
@@ -257,7 +307,20 @@ impl<'a> Parser<'a> {
             
             "ELSE" => Err("Unexpected ELSE without IF".to_string()),
             
-            _ => Err(format!("Unknown word: {}", word)),
+            // Handle constants or unknown words
+            other => {
+                // Check if it is a defined constant
+                if let Some(&val) = self.constants.get(other) {
+                    return Ok(Stmt::Push(Value::new(val)));
+                }
+                // If it is strictly uppercase, it might be a misspelled opcode
+                if other.chars().all(|c| c.is_uppercase() || c == '_') {
+                     return Err(format!("Unknown opcode or constant: {}", other));
+                }
+                // Otherwise, treat as identifier (maybe for Goto, but we don't support that yet fully)
+                // For now, error.
+                Err(format!("Unknown word: {}", other))
+            }
         }
     }
     

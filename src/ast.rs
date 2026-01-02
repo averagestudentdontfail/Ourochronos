@@ -43,6 +43,11 @@ pub enum OpCode {
     /// Push the current stack depth.
     /// Stack: ( -- n )
     Depth,
+
+    /// Pick the nth element from deep in the stack and copy it to top.
+    /// 0 PICK is equivalent to DUP. 1 PICK is equivalent to OVER.
+    /// Stack: ( n -- v )
+    Pick,
     
     // ═══════════════════════════════════════════════════════════════════
     // Arithmetic (modular, wrapping at 2^64)
@@ -179,6 +184,7 @@ impl OpCode {
             OpCode::Over => "OVER",
             OpCode::Rot => "ROT",
             OpCode::Depth => "DEPTH",
+            OpCode::Pick => "PICK",
             OpCode::Add => "ADD",
             OpCode::Sub => "SUB",
             OpCode::Mul => "MUL",
@@ -214,8 +220,10 @@ impl OpCode {
             OpCode::Dup => (1, 2),
             OpCode::Swap => (2, 2),
             OpCode::Over => (2, 3),
+
             OpCode::Rot => (3, 3),
             OpCode::Depth | OpCode::Input => (0, 1),
+            OpCode::Pick => (1, 1),
             OpCode::Neg | OpCode::Not => (1, 1),
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod |
             OpCode::And | OpCode::Or | OpCode::Xor | OpCode::Shl | OpCode::Shr |

@@ -1,0 +1,32 @@
+# "Quantum Suicide" / Paradox Selection
+#
+# Finding a value without searching.
+# We want to find the "Magic Number" (say, 42).
+#
+# Strategy:
+# 1. Ask the Oracle "What is the number?"
+# 2. If it IS 42, we stabilize (write 42).
+# 3. If it is NOT 42, we create a Paradox.
+#
+# Since paradoxes are invalid executions, the Universe (runtime)
+# MUST select the timeline where we guessed 42 immediately.
+
+MANIFEST MAGIC = 42;
+MANIFEST GUESS_ADDR = 0;
+
+GUESS_ADDR ORACLE
+DUP MAGIC EQ
+
+IF {
+    # It matched! Safe timeline.
+    # Stabilize the value.
+    GUESS_ADDR PROPHECY
+    OUTPUT # Prove we found it
+} ELSE {
+    # Wrong universe. Destroy it.
+    # 0 ORACLE NOT 0 PROPHECY -> Grandfather Paradox
+    0 ORACLE NOT 0 PROPHECY
+    
+    # Or simply:
+    # PARADOX
+}

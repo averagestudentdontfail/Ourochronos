@@ -166,7 +166,9 @@ impl SmtEncoder {
             OpCode::Depth => {
                 stack.push(format!("(_ bv{} 64)", stack.len()));
             }
-            
+            OpCode::Pick => {
+                 panic!("SMT encoding for PICK not implemented");
+            }
             OpCode::Add => {
                 if stack.len() >= 2 {
                     let b = stack.pop().unwrap();

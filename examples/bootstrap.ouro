@@ -1,0 +1,57 @@
+# Bootstrap Paradox (Information from Nowhere)
+#
+# We want to print "HELLO".
+# We don't have "HELLO" in the code.
+# We read it from the future.
+# If the future contains "HELLO", we write "HELLO" back (Stable Loop).
+#
+# Where did the information come from? Nowhere. It is a self-sustaining loop.
+
+# ASCII: 72 (H), 69 (E), 76 (L), 76 (L), 79 (O)
+
+MANIFEST H = 72;
+MANIFEST E = 69;
+MANIFEST L = 76;
+MANIFEST O = 79;
+
+# Read 5 chars from future
+0 ORACLE
+1 ORACLE
+2 ORACLE
+3 ORACLE
+4 ORACLE
+
+# Check if it matches "HELLO"
+# (simplified check: verifying last char is 'O' and first is 'H')
+# In a robust version we check all.
+
+4 PEEK O EQ
+5 PEEK H EQ AND
+
+IF {
+    # It matches! The loop is stable.
+    # Write it back to ensure it exists for us to read.
+    4 PROPHECY # O
+    3 PROPHECY # L
+    2 PROPHECY # L
+    1 PROPHECY # E
+    0 PROPHECY # H
+    
+    # Print it
+    0 PRESENT OUTPUT
+    1 PRESENT OUTPUT
+    2 PRESENT OUTPUT
+    3 PRESENT OUTPUT
+    4 PRESENT OUTPUT
+} ELSE {
+    # The future was empty or wrong.
+    # We must seed the loop.
+    # By writing HELLO now, we ensure the *next* epoch reads HELLO.
+    # This bootstrap process converges to the stable loop.
+    
+    H 0 PROPHECY
+    E 1 PROPHECY
+    L 2 PROPHECY
+    L 3 PROPHECY
+    O 4 PROPHECY
+}

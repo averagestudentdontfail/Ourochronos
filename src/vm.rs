@@ -234,7 +234,17 @@ impl Executor {
                 let a = self.peek(state)?;
                 state.stack.push(a);
             }
-            
+            OpCode::Pick => {
+                let n_val = self.pop(state)?;
+                let n = n_val.val;
+                let len = state.stack.len() as u64;
+                if n >= len {
+                     return Err(format!("Pick out of bounds: index {} but depth {}", n, len));
+                }
+                let idx = (len - 1 - n) as usize;
+                let val = state.stack[idx].clone();
+                state.stack.push(val);
+            }
             OpCode::Swap => {
                 let a = self.pop(state)?;
                 let b = self.pop(state)?;

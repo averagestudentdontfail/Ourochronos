@@ -452,6 +452,14 @@ impl TDGBuilder {
             OpCode::Output => {
                 self.stack.pop();
             }
+
+            OpCode::Pick => {
+                // Try to pop n
+                 if let Some(_n_prov) = self.stack.pop() {
+                     // We push None as we can't easily track provenance through dynamic Pick
+                     self.stack.push(AbstractProvenance::Const); 
+                 }
+            }
         }
     }
     

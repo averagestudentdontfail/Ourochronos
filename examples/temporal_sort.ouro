@@ -1,0 +1,75 @@
+# Temporal Sort (O(N) Complexity)
+# Problem: Sort the list [4, 1, 3, 2] at addresses 10-13.
+#
+# Conventional approach: O(N log N) or O(N^2).
+# Temporal approach: O(N) verification.
+#
+# 1. Ask Oracle for the sorted values at 10-13.
+# 2. Verify:
+#    a. Is it sorted? (A[10] <= A[11] <= ...)
+#    b. Is it a permutation? (Sum(A) == Sum(Original) && Product(A) == Product(Original))
+#       (Note: Sum/Product is a weak hash for permutation, but sufficient for demo)
+# 3. If valid: Prophecy(A).
+# 4. If invalid: Chaos (write random values to force re-search).
+
+MANIFEST ADDR_0 = 10;
+MANIFEST ADDR_1 = 11;
+MANIFEST ADDR_2 = 12;
+MANIFEST ADDR_3 = 13;
+
+# Read current guess from future
+ADDR_0 ORACLE
+ADDR_1 ORACLE
+ADDR_2 ORACLE
+ADDR_3 ORACLE
+# Stack: [v0, v1, v2, v3]
+
+# --- Verification Step 1: Is it Sorted? ---
+# v0 <= v1?
+3 PEEK 3 PEEK LTE
+# v1 <= v2?
+3 PEEK 3 PEEK LTE AND
+# v2 <= v3?
+2 PEEK 2 PEEK LTE AND
+
+IF {
+    # Sorted! Now Step 2: Is it a permutation of {1, 2, 3, 4}?
+    # Check Sum: 1+2+3+4 = 10
+    # Stack is still [v0, v1, v2, v3] (we used PEEK)
+    
+    0   # Accumulator
+    4 PEEK ADD
+    4 PEEK ADD
+    4 PEEK ADD
+    4 PEEK ADD
+    
+    10 EQ # Sum == 10?
+    
+    IF {
+        # Valid Sort! Stabilize the timeline.
+        # We need to write v0..v3 back to ADDR_0..ADDR_3
+        # Stack: [v0, v1, v2, v3]
+        
+        ADDR_3 PROPHECY
+        ADDR_2 PROPHECY
+        ADDR_1 PROPHECY
+        ADDR_0 PROPHECY
+        
+        # Output the result
+        ADDR_0 PRESENT OUTPUT
+        ADDR_1 PRESENT OUTPUT
+        ADDR_2 PRESENT OUTPUT
+        ADDR_3 PRESENT OUTPUT
+    } ELSE {
+        # Sorted but wrong numbers (e.g. 0, 0, 0, 10).
+        # Perturb the state to find the real answer.
+        # Simple strategy: Increment start
+        1 ADD ADDR_0 PROPHECY
+    }
+} ELSE {
+    # Not sorted.
+    # Chaos strategy: Swap 0 and 1 to try to fix it.
+    # (In a real implementation we might rely on the runtime's random perturbation)
+    # Here we just write garbage to force a retry.
+    1 ADDR_0 PROPHECY
+}
