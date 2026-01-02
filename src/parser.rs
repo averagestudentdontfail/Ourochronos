@@ -183,7 +183,7 @@ impl<'a> Parser<'a> {
         self.tokens.next(); // Consume MANIFEST
 
         let name = match self.tokens.next() {
-            Some(Token::Word(w)) => w.clone(),
+            Some(Token::Word(w)) => w.to_uppercase(),
             _ => return Err("Expected identifier after MANIFEST".to_string()),
         };
 

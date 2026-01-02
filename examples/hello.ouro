@@ -1,0 +1,85 @@
+# Canonical Hello World
+#
+# Goal: Print "Hello World" using time travel.
+# Method: The "Bootstrap Paradox" (Information from Nowhere).
+#
+# We read the string from the future.
+# If it matches "Hello World", we preserve it (Identity Loop).
+# If it doesn't, we seed it (Initialization).
+#
+# Result: The string effectively has no origin; it exists because it exists.
+
+# ASCII Constants
+MANIFEST H = 72;
+MANIFEST e = 101;
+MANIFEST l = 108;
+MANIFEST o = 111;
+MANIFEST Sp = 32;
+MANIFEST W = 87;
+MANIFEST r = 114;
+MANIFEST d = 100;
+MANIFEST Bang = 33;
+
+# Memory Layout: 0..11
+
+# 1. Read Future (Anamnesis)
+0 ORACLE 1 ORACLE 2 ORACLE 3 ORACLE 4 ORACLE 5 ORACLE
+6 ORACLE 7 ORACLE 8 ORACLE 9 ORACLE 10 ORACLE 11 ORACLE
+# Stack: [H e l l o _ W o r l d !] (if correct)
+
+# 2. Verify (Simplified for readability: just check first and last)
+# In a robust system we'd check all or use a hash.
+11 PICK H EQ      # Check H (Stack items are reversed relative to push order? No, 0 ORACLE pushes val at 0. Top is val at 11.)
+                  # 0 ORACLE pushes A[0]. ... 11 ORACLE pushes A[11].
+                  # Stack: [A0, A1, ..., A11]. Top is A11.
+                  # 0 PICK is A11 (!). 
+                  # 11 PICK is A0 (H).
+0 PICK Bang EQ    # Check !
+AND
+
+IF {
+    # 3. Stabilization (Identity)
+    # Write back exactly what we read to close the loop.
+    # Stack is [A0...A11]. We need to write A11->11, A10->10...
+    # PROPHECY consumes value and address.
+    # Value is on top. Address is implicit from our order.
+    
+    11 PROPHECY
+    10 PROPHECY
+    9  PROPHECY
+    8  PROPHECY
+    7  PROPHECY
+    6  PROPHECY
+    5  PROPHECY
+    4  PROPHECY
+    3  PROPHECY
+    2  PROPHECY
+    1  PROPHECY
+    0  PROPHECY
+    
+    # 4. Output
+    # We successfully stabilized. Now print valid timeline.
+    H OUTPUT e OUTPUT l OUTPUT l OUTPUT o OUTPUT Sp OUTPUT
+    W OUTPUT o OUTPUT r OUTPUT l OUTPUT d OUTPUT Bang OUTPUT
+    
+} ELSE {
+    # 5. Seeding (The "Write" phase of the loop)
+    # The timeline was empty or wrong. Force it to be correct.
+    # Next epoch will see these values.
+    
+    H 0 PROPHECY
+    e 1 PROPHECY
+    l 2 PROPHECY
+    l 3 PROPHECY
+    o 4 PROPHECY
+    Sp 5 PROPHECY
+    W 6 PROPHECY
+    o 7 PROPHECY
+    r 8 PROPHECY
+    l 9 PROPHECY
+    d 10 PROPHECY
+    Bang 11 PROPHECY
+    
+    # Optional: Print "Stabilizing..." to show the process?
+    # No, let's keep it clean.
+}
