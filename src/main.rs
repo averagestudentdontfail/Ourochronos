@@ -41,29 +41,35 @@ fn main() {
             
             let config = Config {
                 max_epochs: 1000,
-                mode: if diagnostic { ExecutionMode::Diagnostic } else { ExecutionMode::Naive },
+                mode: if diagnostic { ExecutionMode::Diagnostic } else { ExecutionMode::Standard },
                 seed, 
+                verbose: diagnostic,
             };
             
-            let driver = TimeLoop::new(config);
+            let mut driver = TimeLoop::new(config);
             match driver.run(&program) {
-                ConvergenceStatus::Consistent(_, epochs) => {
+                ConvergenceStatus::Consistent { epochs, .. } => {
                     println!("CONSISTENT after {} epochs.", epochs);
                 },
-                ConvergenceStatus::Paradox(msg) => {
-                    println!("PARADOX: {}", msg);
+                ConvergenceStatus::Paradox { message, .. } => {
+                    println!("PARADOX: {}", message);
                 },
-                ConvergenceStatus::Oscillation(period, last_state, atoms) => {
+                ConvergenceStatus::Oscillation { period, oscillating_cells, .. } => {
                     println!("OSCILLATION detected (period {})", period);
-                    if diagnostic && !atoms.is_empty() {
-                         println!("Oscillating Addresses: {:?}", atoms);
+                    if diagnostic && !oscillating_cells.is_empty() {
+                         println!("Oscillating Addresses: {:?}", oscillating_cells);
                     } else if diagnostic {
                         println!("No specific single-cell oscillations detected (global state cycle).");
                     }
-                    // println!("Last state: {:?}", last_state);
                 },
-                ConvergenceStatus::Timeout(limit) => {
-                    println!("TIMEOUT after {} epochs.", limit);
+                ConvergenceStatus::Timeout { max_epochs } => {
+                    println!("TIMEOUT after {} epochs.", max_epochs);
+                },
+                ConvergenceStatus::Divergence { .. } => {
+                     println!("DIVERGENCE detected.");
+                },
+                ConvergenceStatus::Error { message, .. } => {
+                     println!("ERROR: {}", message);
                 }
             }
         },

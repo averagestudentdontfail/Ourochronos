@@ -1,7 +1,18 @@
 [package]
 name = "ourochronos"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+authors = ["OUROCHRONOS Project"]
+description = "A closed timelike curve programming language"
+license = "MIT"
 
 [dependencies]
-# We will likely need regex or parsing tools later, keeping it minimal for now.
+
+[features]
+default = []
+smt = []
+parallel = []
+
+[[bin]]
+name = "ourochronos"
+path = "src/main.rs"

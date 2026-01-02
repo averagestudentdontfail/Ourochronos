@@ -1,167 +1,481 @@
+//! SMT-LIB2 encoder for OUROCHRONOS programs.
+//!
+//! Compiles the fixed-point constraint A = F(A) to SMT-LIB2 format,
+//! allowing industrial solvers (Z3, CVC5) to find fixed points or
+//! prove paradoxes (UNSAT).
+
 use crate::ast::{Program, Stmt, OpCode};
-use crate::core_types::{Address, MEMORY_SIZE};
 use std::fmt::Write;
 
-/// Compiles a Program into SMT-LIB2 format to solve A = F(A).
-/// 
-/// We model Memory as an Array (Int, Int) or BitVectors.
-/// Since Ourochronos is 64-bit, we use (_ BitVec 64).
-/// Address is 16-bit, so (_ BitVec 16) for indices.
-/// 
-/// The constraint is:
-/// (assert (= FinalPresent InitialAnamnesis))
+/// SMT-LIB2 encoder for OUROCHRONOS.
 pub struct SmtEncoder {
-    pub output: String,
-    pub var_counter: usize,
+    /// Generated SMT code.
+    output: String,
+    /// Counter for fresh variable names.
+    var_counter: usize,
+    /// Maximum loop unrolling depth.
+    max_unroll: usize,
 }
 
 impl SmtEncoder {
+    /// Create a new encoder.
     pub fn new() -> Self {
         Self {
             output: String::new(),
             var_counter: 0,
+            max_unroll: 10,
         }
     }
-
+    
+    /// Create an encoder with custom unroll limit.
+    pub fn with_unroll_limit(max_unroll: usize) -> Self {
+        Self {
+            output: String::new(),
+            var_counter: 0,
+            max_unroll,
+        }
+    }
+    
+    /// Encode a program to SMT-LIB2.
     pub fn encode(&mut self, program: &Program) -> String {
         self.output.clear();
-        writeln!(self.output, "(set-logic QF_ABV)").unwrap(); // Quantifier-Free Arrays & BitVectors
+        self.var_counter = 0;
+        
+        // Header
+        writeln!(self.output, "; OUROCHRONOS SMT-LIB2 Encoding").unwrap();
+        writeln!(self.output, "; Fixed-point constraint: A = F(A)").unwrap();
+        writeln!(self.output).unwrap();
+        
+        // Logic: Quantifier-Free Arrays and Bit-Vectors
+        writeln!(self.output, "(set-logic QF_ABV)").unwrap();
         writeln!(self.output, "(set-option :produce-models true)").unwrap();
+        writeln!(self.output).unwrap();
         
-        // Define Anamnesis as an array
+        // Declare Anamnesis (the unknown we're solving for)
+        writeln!(self.output, "; Anamnesis: the memory state from the 'future'").unwrap();
         writeln!(self.output, "(declare-const anamnesis (Array (_ BitVec 16) (_ BitVec 64)))").unwrap();
+        writeln!(self.output).unwrap();
         
-        // Init Present as an array (usually initialized to 0)
+        // Initialize Present to all zeros
+        writeln!(self.output, "; Present: starts as all zeros").unwrap();
         writeln!(self.output, "(declare-const present_init (Array (_ BitVec 16) (_ BitVec 64)))").unwrap();
-        // Const array 0 (requires a quantifier or specific solver support, or just assuming default)
-        // For QF_ABV, we can't easily say "const array".
-        // Instead, we track writes. 
-        // Logic: "present" is state.
-        // We will simulate the execution symbolically.
-        
-        // State: Stack, Present (as symbolic array term)
-        // Stack elements are symbolic bitvector terms.
-        
-        let mut stack: Vec<String> = Vec::new();
-        let mut present_term = "present_init".to_string();
-        
-        // Assume present_init is all zeros?
-        // (assert (= present_init ((as const (Array (_ BitVec 16) (_ BitVec 64))) (_ bv0 64))))
         writeln!(self.output, "(assert (= present_init ((as const (Array (_ BitVec 16) (_ BitVec 64))) (_ bv0 64))))").unwrap();
-
-        self.symbolic_exec(&program.body, &mut stack, &mut present_term);
+        writeln!(self.output).unwrap();
         
-        // Final Constraint: Present == Anamnesis
-        writeln!(self.output, "(assert (= {} anamnesis))", present_term).unwrap();
+        // Symbolic execution
+        writeln!(self.output, "; Symbolic execution of program").unwrap();
+        let mut stack: Vec<String> = Vec::new();
+        let mut present = "present_init".to_string();
         
+        self.encode_block(&program.body, &mut stack, &mut present, 0);
+        
+        writeln!(self.output).unwrap();
+        
+        // Fixed-point constraint
+        writeln!(self.output, "; Fixed-point constraint: Present = Anamnesis").unwrap();
+        writeln!(self.output, "(assert (= {} anamnesis))", present).unwrap();
+        writeln!(self.output).unwrap();
+        
+        // Check and get model
         writeln!(self.output, "(check-sat)").unwrap();
         writeln!(self.output, "(get-model)").unwrap();
         
         self.output.clone()
     }
-
-    fn symbolic_exec(&mut self, stmts: &[Stmt], stack: &mut Vec<String>, present: &mut String) {
+    
+    /// Generate a fresh variable name.
+    fn fresh_var(&mut self, prefix: &str) -> String {
+        let name = format!("{}_{}", prefix, self.var_counter);
+        self.var_counter += 1;
+        name
+    }
+    
+    /// Encode a block of statements.
+    fn encode_block(&mut self, stmts: &[Stmt], 
+                    stack: &mut Vec<String>, 
+                    present: &mut String,
+                    depth: usize) {
         for stmt in stmts {
-            match stmt {
-                Stmt::Op(op) => self.encode_op(*op, stack, present),
-                Stmt::Push(v) => {
-                    let term = format!("(_ bv{} 64)", v.val);
-                    stack.push(term);
-                },
-                Stmt::PushAddr(a) => {
-                    // Push constant as u64
-                    let term = format!("(_ bv{} 64)", a.0);
-                    stack.push(term);
-                },
-                Stmt::Block(inner) => self.symbolic_exec(inner, stack, present),
-                Stmt::If { .. } | Stmt::While { .. } => {
-                    // Control flow in SMT is hard. We have to unroll or use ITE (If-Then-Else).
-                    // For now, let's assume flat code or simple ITE.
-                    // THIS IS A GAP. Full structural translation requires path conditions.
-                    // Fallback: Just emit a comment.
-                    writeln!(self.output, "; Unsupported control flow").unwrap();
-                }
+            self.encode_stmt(stmt, stack, present, depth);
+        }
+    }
+    
+    /// Encode a single statement.
+    fn encode_stmt(&mut self, stmt: &Stmt, 
+                   stack: &mut Vec<String>, 
+                   present: &mut String,
+                   depth: usize) {
+        match stmt {
+            Stmt::Push(v) => {
+                stack.push(format!("(_ bv{} 64)", v.val));
+            }
+            
+            Stmt::Op(op) => {
+                self.encode_op(*op, stack, present);
+            }
+            
+            Stmt::Block(stmts) => {
+                self.encode_block(stmts, stack, present, depth);
+            }
+            
+            Stmt::If { then_branch, else_branch } => {
+                self.encode_if(then_branch, else_branch.as_deref(), stack, present, depth);
+            }
+            
+            Stmt::While { cond, body } => {
+                self.encode_while(cond, body, stack, present, depth);
             }
         }
     }
-
+    
+    /// Encode an opcode.
     fn encode_op(&mut self, op: OpCode, stack: &mut Vec<String>, present: &mut String) {
         match op {
+            OpCode::Nop | OpCode::Halt | OpCode::Paradox => {}
+            
+            OpCode::Pop => { stack.pop(); }
+            
+            OpCode::Dup => {
+                if let Some(top) = stack.last().cloned() {
+                    stack.push(top);
+                }
+            }
+            
+            OpCode::Swap => {
+                if stack.len() >= 2 {
+                    let len = stack.len();
+                    stack.swap(len - 1, len - 2);
+                }
+            }
+            
+            OpCode::Over => {
+                if stack.len() >= 2 {
+                    let val = stack[stack.len() - 2].clone();
+                    stack.push(val);
+                }
+            }
+            
+            OpCode::Rot => {
+                if stack.len() >= 3 {
+                    let len = stack.len();
+                    let c = stack.remove(len - 3);
+                    stack.push(c);
+                }
+            }
+            
+            OpCode::Depth => {
+                stack.push(format!("(_ bv{} 64)", stack.len()));
+            }
+            
             OpCode::Add => {
-                let b = stack.pop().unwrap();
-                let a = stack.pop().unwrap();
-                stack.push(format!("(bvadd {} {})", a, b));
-            },
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(bvadd {} {})", a, b));
+                }
+            }
+            
             OpCode::Sub => {
-                let b = stack.pop().unwrap();
-                let a = stack.pop().unwrap();
-                stack.push(format!("(bvsub {} {})", a, b));
-            },
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(bvsub {} {})", a, b));
+                }
+            }
+            
             OpCode::Mul => {
-                let b = stack.pop().unwrap();
-                let a = stack.pop().unwrap();
-                stack.push(format!("(bvmul {} {})", a, b));
-            },
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(bvmul {} {})", a, b));
+                }
+            }
+            
             OpCode::Div => {
-                let b = stack.pop().unwrap();
-                let a = stack.pop().unwrap();
-                stack.push(format!("(bvudiv {} {})", a, b));
-            },
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    // Handle div by zero: (ite (= b 0) 0 (bvudiv a b))
+                    stack.push(format!(
+                        "(ite (= {} (_ bv0 64)) (_ bv0 64) (bvudiv {} {}))",
+                        b, a, b
+                    ));
+                }
+            }
+            
             OpCode::Mod => {
-                let b = stack.pop().unwrap();
-                let a = stack.pop().unwrap();
-                stack.push(format!("(bvurem {} {})", a, b));
-            },
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!(
+                        "(ite (= {} (_ bv0 64)) (_ bv0 64) (bvurem {} {}))",
+                        b, a, b
+                    ));
+                }
+            }
+            
+            OpCode::Neg => {
+                if let Some(a) = stack.pop() {
+                    stack.push(format!("(bvneg {})", a));
+                }
+            }
+            
+            OpCode::Not => {
+                if let Some(a) = stack.pop() {
+                    stack.push(format!("(bvnot {})", a));
+                }
+            }
             
             OpCode::And => {
-                let b = stack.pop().unwrap();
-                let a = stack.pop().unwrap();
-                stack.push(format!("(bvand {} {})", a, b));
-            },
-            OpCode::Or => {
-                let b = stack.pop().unwrap();
-                let a = stack.pop().unwrap();
-                stack.push(format!("(bvor {} {})", a, b));
-            },
-            OpCode::Xor => {
-                let b = stack.pop().unwrap();
-                let a = stack.pop().unwrap();
-                stack.push(format!("(bvxor {} {})", a, b));
-            },
-            OpCode::Not => {
-                let a = stack.pop().unwrap();
-                stack.push(format!("(bvnot {})", a));
-            },
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(bvand {} {})", a, b));
+                }
+            }
             
-            // Compare -> Returns 1 or 0
+            OpCode::Or => {
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(bvor {} {})", a, b));
+                }
+            }
+            
+            OpCode::Xor => {
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(bvxor {} {})", a, b));
+                }
+            }
+            
+            OpCode::Shl => {
+                if stack.len() >= 2 {
+                    let n = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(bvshl {} {})", a, n));
+                }
+            }
+            
+            OpCode::Shr => {
+                if stack.len() >= 2 {
+                    let n = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(bvlshr {} {})", a, n));
+                }
+            }
+            
             OpCode::Eq => {
-                let b = stack.pop().unwrap();
-                let a = stack.pop().unwrap();
-                // (ite (= a b) bv1 bv0)
-                stack.push(format!("(ite (= {} {}) (_ bv1 64) (_ bv0 64))", a, b));
-            },
-            // ... other comparisons ...
-
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(ite (= {} {}) (_ bv1 64) (_ bv0 64))", a, b));
+                }
+            }
+            
+            OpCode::Neq => {
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(ite (not (= {} {})) (_ bv1 64) (_ bv0 64))", a, b));
+                }
+            }
+            
+            OpCode::Lt => {
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(ite (bvult {} {}) (_ bv1 64) (_ bv0 64))", a, b));
+                }
+            }
+            
+            OpCode::Gt => {
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(ite (bvugt {} {}) (_ bv1 64) (_ bv0 64))", a, b));
+                }
+            }
+            
+            OpCode::Lte => {
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(ite (bvule {} {}) (_ bv1 64) (_ bv0 64))", a, b));
+                }
+            }
+            
+            OpCode::Gte => {
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(format!("(ite (bvuge {} {}) (_ bv1 64) (_ bv0 64))", a, b));
+                }
+            }
+            
             OpCode::Oracle => {
-                // Pop addr
-                let addr_full = stack.pop().unwrap();
-                // Extract 16 bits
-                let addr_16 = format!("((_ extract 15 0) {})", addr_full);
-                // Read from Anamnesis array
-                let term = format!("(select anamnesis {})", addr_16);
-                stack.push(term);
-            },
+                if let Some(addr) = stack.pop() {
+                    let addr16 = format!("((_ extract 15 0) {})", addr);
+                    stack.push(format!("(select anamnesis {})", addr16));
+                }
+            }
             
             OpCode::Prophecy => {
-                let addr_full = stack.pop().unwrap();
-                let val = stack.pop().unwrap();
-                let addr_16 = format!("((_ extract 15 0) {})", addr_full);
-                // Update 'present' term using store
-                // new_present = (store old_present addr val)
-                *present = format!("(store {} {} {})", present, addr_16, val);
-            },
+                if stack.len() >= 2 {
+                    let addr = stack.pop().unwrap();
+                    let val = stack.pop().unwrap();
+                    let addr16 = format!("((_ extract 15 0) {})", addr);
+                    
+                    let new_present = self.fresh_var("present");
+                    writeln!(self.output, "(declare-const {} (Array (_ BitVec 16) (_ BitVec 64)))", new_present).unwrap();
+                    writeln!(self.output, "(assert (= {} (store {} {} {})))", new_present, present, addr16, val).unwrap();
+                    *present = new_present;
+                }
+            }
             
-            _ => {}
+            OpCode::PresentRead => {
+                if let Some(addr) = stack.pop() {
+                    let addr16 = format!("((_ extract 15 0) {})", addr);
+                    stack.push(format!("(select {} {})", present, addr16));
+                }
+            }
+            
+            OpCode::Input => {
+                // Fresh symbolic input
+                let input_var = self.fresh_var("input");
+                writeln!(self.output, "(declare-const {} (_ BitVec 64))", input_var).unwrap();
+                stack.push(input_var);
+            }
+            
+            OpCode::Output => {
+                stack.pop();
+            }
         }
+    }
+    
+    /// Encode IF statement using ITE.
+    fn encode_if(&mut self, 
+                 then_branch: &[Stmt],
+                 else_branch: Option<&[Stmt]>,
+                 stack: &mut Vec<String>,
+                 present: &mut String,
+                 depth: usize) {
+        // Pop condition
+        let cond = stack.pop().unwrap_or("(_ bv0 64)".to_string());
+        let cond_bool = format!("(not (= {} (_ bv0 64)))", cond);
+        
+        // Save state
+        let stack_before = stack.clone();
+        let present_before = present.clone();
+        
+        // Encode then branch
+        self.encode_block(then_branch, stack, present, depth + 1);
+        let stack_then = stack.clone();
+        let present_then = present.clone();
+        
+        // Encode else branch
+        *stack = stack_before;
+        *present = present_before.clone();
+        
+        if let Some(else_stmts) = else_branch {
+            self.encode_block(else_stmts, stack, present, depth + 1);
+        }
+        let stack_else = stack.clone();
+        let present_else = present.clone();
+        
+        // Merge present using ITE
+        let merged_present = self.fresh_var("present");
+        writeln!(self.output, "(declare-const {} (Array (_ BitVec 16) (_ BitVec 64)))", merged_present).unwrap();
+        writeln!(self.output, "(assert (= {} (ite {} {} {})))", 
+                 merged_present, cond_bool, present_then, present_else).unwrap();
+        *present = merged_present;
+        
+        // Merge stacks (take minimum length, merge with ITE)
+        let min_len = stack_then.len().min(stack_else.len());
+        stack.clear();
+        for i in 0..min_len {
+            let merged_val = format!("(ite {} {} {})", cond_bool, stack_then[i], stack_else[i]);
+            stack.push(merged_val);
+        }
+    }
+    
+    /// Encode WHILE statement via bounded unrolling.
+    fn encode_while(&mut self,
+                    cond: &[Stmt],
+                    body: &[Stmt],
+                    stack: &mut Vec<String>,
+                    present: &mut String,
+                    depth: usize) {
+        if depth >= self.max_unroll {
+            writeln!(self.output, "; Loop unroll limit reached").unwrap();
+            return;
+        }
+        
+        // Unroll: for i in 0..max_unroll: if cond then body
+        for _ in 0..self.max_unroll {
+            // Evaluate condition
+            self.encode_block(cond, stack, present, depth + 1);
+            
+            if stack.is_empty() {
+                break;
+            }
+            
+            // Encode as conditional body
+            let cond_val = stack.pop().unwrap();
+            let cond_bool = format!("(not (= {} (_ bv0 64)))", cond_val);
+            
+            // Save state
+            let stack_before = stack.clone();
+            let present_before = present.clone();
+            
+            // Encode body
+            self.encode_block(body, stack, present, depth + 1);
+            
+            // Merge: if cond was true, use new state; else keep old
+            let merged_present = self.fresh_var("present");
+            writeln!(self.output, "(declare-const {} (Array (_ BitVec 16) (_ BitVec 64)))", merged_present).unwrap();
+            writeln!(self.output, "(assert (= {} (ite {} {} {})))", 
+                     merged_present, cond_bool, present, present_before).unwrap();
+            *present = merged_present;
+            
+            // Merge stack
+            let min_len = stack.len().min(stack_before.len());
+            let new_stack: Vec<String> = (0..min_len)
+                .map(|i| format!("(ite {} {} {})", cond_bool, stack[i], stack_before[i]))
+                .collect();
+            *stack = new_stack;
+        }
+    }
+}
+
+impl Default for SmtEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::parse;
+    
+    #[test]
+    fn test_encode_simple() {
+        let program = parse("0 ORACLE 0 PROPHECY").unwrap();
+        let mut encoder = SmtEncoder::new();
+        let smt = encoder.encode(&program);
+        
+        assert!(smt.contains("anamnesis"));
+        assert!(smt.contains("check-sat"));
+    }
+    
+    #[test]
+    fn test_encode_arithmetic() {
+        let program = parse("10 20 ADD 0 PROPHECY").unwrap();
+        let mut encoder = SmtEncoder::new();
+        let smt = encoder.encode(&program);
+        
+        assert!(smt.contains("bvadd"));
     }
 }

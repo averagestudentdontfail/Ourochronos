@@ -10,5 +10,8 @@ pub use core_types::{Value, Address, Memory, MEMORY_SIZE};
 pub use ast::{OpCode, Stmt, Program};
 pub use parser::{tokenize, Parser};
 pub use vm::{Executor, EpochStatus};
-pub use timeloop::{TimeLoop, ConvergenceStatus, Config, ExecutionMode};
+pub use timeloop::{TimeLoop, ConvergenceStatus, TimeLoopConfig as Config, ExecutionMode};
 pub use smt_encoder::SmtEncoder;
+pub mod analysis;
+
+mod tests;
