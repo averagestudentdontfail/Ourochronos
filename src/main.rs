@@ -46,17 +46,17 @@ fn main() {
                 verbose: diagnostic,
             };
             
-            let mut driver = TimeLoop::new(config);
+            let mut driver = TimeLoop::new(config.clone());
             match driver.run(&program) {
                 ConvergenceStatus::Consistent { epochs, output, .. } => {
-                    println!("CONSISTENT after {} epochs.", epochs);
+                    // Only print consistency status if verbose/diagnostic or NO output
+                    if config.verbose || output.is_empty() {
+                        println!("CONSISTENT after {} epochs.", epochs);
+                    }
+                    
                     if !output.is_empty() {
-                         println!("Final Output:");
+                         // Print raw output without label
                          for val in output {
-                              // If it's ASCII, maybe try to print char?
-                              // For now just print value.
-                              // Actually, hello.ouro sends chars. Let's inspect output generation.
-                              // For hello world we want characters.
                               if val.val >= 32 && val.val < 127 {
                                    print!("{}", val.val as u8 as char);
                               } else {
