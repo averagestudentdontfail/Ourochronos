@@ -1,0 +1,44 @@
+# Primality Test via Witness Pattern
+# Problem: Is 15 factorable?
+# If we check ALL numbers, it's slow.
+# Instead, we ask the Oracle for a factor F.
+# We verify if F divides Target (15).
+# If yes, we project consistency (Output F, Write F to P).
+# If no, we create a paradox or diverge (Write F+1 to F).
+#
+# Target: 15
+# Memory Layout:
+# 0: Factor Witness (from Oracle)
+
+0 ORACLE          # Get candidate factor F
+# Duplicate F for later use
+DUP
+
+# Verify factor > 1?
+DUP 1 GT
+IF {
+    # Verify factor < Target?
+    DUP 15 LT
+    IF {
+        # Verify 15 % F == 0?
+        DUP 15 SWAP MOD 0 EQ
+        IF {
+           # It IS a factor!
+           # Write F to Prophesy. 
+           # This creates a consistent loop: A[0]=F -> P[0]=F.
+           DUP 0 PROPHECY
+           OUTPUT # Show the factor
+        } ELSE {
+           # Not a factor.
+           # Force change. P[0] = F + 1.
+           # This ensures F cannot be a fixed point unless it satisfies conditions.
+           1 ADD 0 PROPHECY
+        }
+    } ELSE {
+        # F >= target, invalid.
+        1 ADD 0 PROPHECY
+    }
+} ELSE {
+    # F <= 1, invalid.
+    1 ADD 0 PROPHECY
+}

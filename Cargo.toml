@@ -1,0 +1,7 @@
+[package]
+name = "ourochronos"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# We will likely need regex or parsing tools later, keeping it minimal for now.
