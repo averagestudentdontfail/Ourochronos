@@ -210,6 +210,39 @@ impl Executor {
                 }
                 Ok(())
             }
+            
+            Stmt::Call { name } => {
+                // Note: Procedure lookup happens at runtime via the program
+                // For now, this is a placeholder - actual inlining happens in run_epoch
+                Err(format!("Procedure call '{}' not inlined - ensure program is preprocessed", name))
+            }
+            
+            Stmt::Match { cases, default } => {
+                // Pop the value to match against
+                let val = self.pop(state)?.val;
+                
+                // Find matching case
+                let mut matched = false;
+                for (pattern, body) in cases {
+                    if val == *pattern {
+                        for stmt in body {
+                            self.execute_stmt(stmt, state)?;
+                        }
+                        matched = true;
+                        break;
+                    }
+                }
+                
+                // Execute default if no match
+                if !matched {
+                    if let Some(default_body) = default {
+                        for stmt in default_body {
+                            self.execute_stmt(stmt, state)?;
+                        }
+                    }
+                }
+                Ok(())
+            }
         }
     }
     
@@ -474,6 +507,43 @@ impl Executor {
                 }
                 
                 state.output.push(val);
+            }
+            
+            // Array/Memory Operations
+            OpCode::Pack => {
+                // Pack n values into contiguous memory at base address
+                let n = self.pop(state)?.val as usize;
+                let base = self.pop(state)?.val as Address;
+                for i in 0..n {
+                    let val = self.pop(state)?;
+                    state.present.write(base + (n - 1 - i) as Address, val);
+                }
+            }
+            
+            OpCode::Unpack => {
+                // Unpack n values from contiguous memory at base address
+                let n = self.pop(state)?.val as usize;
+                let base = self.pop(state)?.val as Address;
+                for i in 0..n {
+                    let val = state.present.read(base + i as Address);
+                    state.stack.push(val);
+                }
+            }
+            
+            OpCode::Index => {
+                // Read from base + index
+                let index = self.pop(state)?.val as Address;
+                let base = self.pop(state)?.val as Address;
+                let val = state.present.read(base + index);
+                state.stack.push(val);
+            }
+            
+            OpCode::Store => {
+                // Store value at base + index
+                let index = self.pop(state)?.val as Address;
+                let base = self.pop(state)?.val as Address;
+                let val = self.pop(state)?;
+                state.present.write(base + index, val);
             }
         }
         

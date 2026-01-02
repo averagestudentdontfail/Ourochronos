@@ -16,6 +16,18 @@ mod tests {
             verbose: false,
         }
     }
+    
+    fn action_config() -> Config {
+        Config {
+            max_epochs: 100,
+            mode: ExecutionMode::ActionGuided {
+                config: ActionConfig::anti_trivial(),
+                num_seeds: 4,
+            },
+            seed: 0,
+            verbose: false,
+        }
+    }
 
     #[test]
     fn test_trivial_consistency() {
@@ -126,4 +138,84 @@ mod tests {
              panic!("Expected Oscillation with diagnosis, got {:?}", result);
         }
     }
+    
+    // ========================================================================
+    // Action-Guided Execution Tests
+    // ========================================================================
+    
+    #[test]
+    fn test_action_guided_finds_fixed_point() {
+        // Simple self-fulfilling prophecy should work with action-guided mode
+        let program = parse("0 ORACLE 0 PROPHECY");
+        let result = TimeLoop::new(action_config()).run(&program);
+        assert!(matches!(result, ConvergenceStatus::Consistent { .. }));
+    }
+    
+    #[test]
+    fn test_action_guided_prefers_output() {
+        // Action-guided mode should prefer the fixed point that produces output
+        // Program: reads oracle, if non-zero outputs it and stabilizes
+        let program = parse("0 ORACLE DUP 0 EQ NOT IF { DUP OUTPUT DUP 0 PROPHECY } ELSE { 1 0 PROPHECY }");
+        let result = TimeLoop::new(action_config()).run(&program);
+        
+        match result {
+            ConvergenceStatus::Consistent { output, .. } => {
+                // Should have produced output
+                assert!(!output.is_empty(), "Action-guided should prefer output-producing fixed point");
+            }
+            _ => panic!("Expected consistent execution, got {:?}", result),
+        }
+    }
+    
+    #[test]
+    fn test_action_guided_factor_witness() {
+        // Test that action-guided mode finds factors
+        // Program: ask oracle for factor of 15, verify, output if correct
+        let program = parse(r#"
+            0 ORACLE
+            DUP 1 GT IF {
+                DUP 15 LT IF {
+                    DUP 15 SWAP MOD 0 EQ IF {
+                        DUP 0 PROPHECY
+                        OUTPUT
+                    } ELSE {
+                        1 ADD 0 PROPHECY
+                    }
+                } ELSE {
+                    1 ADD 0 PROPHECY
+                }
+            } ELSE {
+                1 ADD 0 PROPHECY
+            }
+        "#);
+        
+        let result = TimeLoop::new(action_config()).run(&program);
+        
+        match result {
+            ConvergenceStatus::Consistent { memory, output, .. } => {
+                let factor = memory.read(0).val;
+                // Factor should divide 15
+                assert!(factor > 1 && factor < 15, "Factor {} should be > 1 and < 15", factor);
+                assert_eq!(15 % factor, 0, "Factor {} should divide 15", factor);
+                // Should have produced output
+                assert!(!output.is_empty(), "Should output the factor");
+            }
+            _ => panic!("Expected consistent execution, got {:?}", result),
+        }
+    }
+    
+    #[test]
+    fn test_action_mode_enum_equality() {
+        // Test that ActionGuided mode can be compared
+        let mode1 = ExecutionMode::ActionGuided {
+            config: ActionConfig::anti_trivial(),
+            num_seeds: 4,
+        };
+        let mode2 = ExecutionMode::ActionGuided {
+            config: ActionConfig::anti_trivial(),
+            num_seeds: 4,
+        };
+        assert_eq!(mode1, mode2);
+    }
 }
+

@@ -67,6 +67,20 @@ The runtime detects **Grandfather Paradoxes** (oscillating states) and **Diverge
 ### 3. Formal Verification
 The language includes a built-in SMT compiler that translates temporal logic into static constraints, allowing you to use solvers like Z3 to find fixed points for complex programs instantly.
 
+### 4. Action Principle
+When multiple fixed points exist, Ourochronos can find the "path of least resistance" - a trivial solution. The **Action Principle** addresses this by defining a cost function analogous to the Lagrangian in physics:
+
+```bash
+ourochronos program.ouro --action
+```
+
+In `--action` mode, the runtime:
+1. Explores multiple seed strategies (zeros, primes, sequences, etc.)
+2. Finds all valid fixed points
+3. Selects the one with **minimum action** (preferring non-trivial, output-producing solutions)
+
+This mirrors how the Principle of Least Action in physics selects the actual path from infinite possibilities.
+
 ## Documentation
 *   [Formal Specification](docs/specification.md): The Abstract Machine and ISA.
 *   [Coding Standard](docs/standard.md): Governance for Causal Integrity.

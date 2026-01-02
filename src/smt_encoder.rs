@@ -125,6 +125,15 @@ impl SmtEncoder {
             Stmt::While { cond, body } => {
                 self.encode_while(cond, body, stack, present, depth);
             }
+            
+            Stmt::Call { name } => {
+                panic!("SMT encoding does not support procedure calls - inline procedures first: {}", name);
+            }
+            
+            Stmt::Match { cases: _, default: _ } => {
+                // Pattern matching requires complex ITE chains
+                // For now, skip - would need full stack simulation
+            }
         }
     }
     
@@ -352,6 +361,12 @@ impl SmtEncoder {
             
             OpCode::Output => {
                 stack.pop();
+            }
+            
+            // Array opcodes - not fully supported in SMT encoding
+            OpCode::Pack | OpCode::Unpack | OpCode::Index | OpCode::Store => {
+                // Array operations require complex memory theory
+                // For now, we skip them in SMT encoding
             }
         }
     }

@@ -1,0 +1,44 @@
+# Procedure Example
+#
+# This demonstrates the new PROCEDURE syntax for reusable functions.
+# Procedures take values from the stack and leave results on the stack.
+
+# Define a procedure to check if a value is in range (1, limit)
+PROCEDURE in_range {
+    # Stack: value limit
+    SWAP           # limit value
+    DUP 1 GT       # limit value (value > 1)
+    ROT            # value (value > 1) limit  
+    ROT            # (value > 1) limit value
+    LT             # (value > 1) (value < limit)
+    AND            # (value > 1) && (value < limit)
+}
+
+# Define a procedure to check if n is divisible by d
+PROCEDURE divides {
+    # Stack: n d
+    SWAP DUP       # d n n
+    ROT            # n n d
+    MOD            # n (n mod d)
+    0 EQ           # d divides n?
+}
+
+# Main program: Find a factor of 15
+LET n = 15;
+LET factor = 0 ORACLE;
+
+# Check if factor is in valid range
+factor n in_range IF {
+    # Check if factor divides n
+    n factor divides IF {
+        # Found a factor!
+        factor OUTPUT
+        factor 0 PROPHECY
+    } ELSE {
+        # Not a factor, try next
+        factor 1 ADD 0 PROPHECY
+    }
+} ELSE {
+    # Out of range, reset to 2
+    2 0 PROPHECY
+}

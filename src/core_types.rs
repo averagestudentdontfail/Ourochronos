@@ -285,6 +285,31 @@ impl Memory {
         }
         result
     }
+    
+    /// Iterate over non-zero cells, yielding (address, value) pairs.
+    pub fn iter_nonzero(&self) -> impl Iterator<Item = (Address, &Value)> {
+        self.cells.iter()
+            .enumerate()
+            .filter(|(_, v)| v.val != 0)
+            .map(|(i, v)| (i as Address, v))
+    }
+    
+    /// Get the total number of memory cells.
+    pub fn len(&self) -> usize {
+        self.cells.len()
+    }
+    
+    /// Check if memory is empty (all zeros).
+    pub fn is_empty(&self) -> bool {
+        self.cells.iter().all(|v| v.val == 0)
+    }
+    
+    /// Iterate over all cells, yielding (address, value) pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (Address, &Value)> {
+        self.cells.iter()
+            .enumerate()
+            .map(|(i, v)| (i as Address, v))
+    }
 }
 
 #[cfg(test)]

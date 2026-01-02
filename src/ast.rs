@@ -160,6 +160,26 @@ pub enum OpCode {
     Paradox,
     
     // ═══════════════════════════════════════════════════════════════════
+    // Array/Memory Operations
+    // ═══════════════════════════════════════════════════════════════════
+    
+    /// Pack n values into contiguous memory starting at base address.
+    /// Stack: ( v1 v2 ... vn base n -- )
+    Pack,
+    
+    /// Unpack n values from contiguous memory at base address.
+    /// Stack: ( base n -- v1 v2 ... vn )
+    Unpack,
+    
+    /// Read from memory at computed index: base + index.
+    /// Stack: ( base index -- P[base+index] )
+    Index,
+    
+    /// Store to memory at computed index: base + index.
+    /// Stack: ( value base index -- )
+    Store,
+    
+    // ═══════════════════════════════════════════════════════════════════
     // I/O Operations
     // ═══════════════════════════════════════════════════════════════════
     
@@ -207,6 +227,10 @@ impl OpCode {
             OpCode::Prophecy => "PROPHECY",
             OpCode::PresentRead => "PRESENT",
             OpCode::Paradox => "PARADOX",
+            OpCode::Pack => "PACK",
+            OpCode::Unpack => "UNPACK",
+            OpCode::Index => "INDEX",
+            OpCode::Store => "STORE",
             OpCode::Input => "INPUT",
             OpCode::Output => "OUTPUT",
         }
@@ -230,6 +254,11 @@ impl OpCode {
             OpCode::Eq | OpCode::Neq | OpCode::Lt | OpCode::Gt | OpCode::Lte | OpCode::Gte => (2, 1),
             OpCode::Oracle | OpCode::PresentRead => (1, 1),
             OpCode::Prophecy => (2, 0),
+            // Array opcodes have variable effects, these are minimums
+            OpCode::Pack => (2, 0),    // base, n, (plus n values consumed)
+            OpCode::Unpack => (2, 0),  // base, n (produces n values)
+            OpCode::Index => (2, 1),   // base, index -> value
+            OpCode::Store => (3, 0),   // value, base, index
         }
     }
 }
@@ -259,18 +288,52 @@ pub enum Stmt {
     
     /// A block of statements (scoped grouping).
     Block(Vec<Stmt>),
+    
+    /// Call a procedure by name.
+    /// Stack effect depends on the procedure's parameter and return count.
+    Call {
+        name: String,
+    },
+    
+    /// Pattern match on top-of-stack value.
+    /// Pops value and selects matching case branch or default.
+    Match {
+        /// List of (pattern, body) pairs.
+        cases: Vec<(u64, Vec<Stmt>)>,
+        /// Default case if no pattern matches.
+        default: Option<Vec<Stmt>>,
+    },
+}
+
+/// A procedure definition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Procedure {
+    /// Procedure name.
+    pub name: String,
+    /// Parameter names (for documentation; all params come from stack).
+    pub params: Vec<String>,
+    /// Number of return values pushed to stack.
+    pub returns: usize,
+    /// Body of the procedure.
+    pub body: Vec<Stmt>,
 }
 
 /// A complete OUROCHRONOS program.
 #[derive(Debug, Clone)]
 pub struct Program {
+    /// Procedure definitions.
+    pub procedures: Vec<Procedure>,
+    /// Main program body.
     pub body: Vec<Stmt>,
 }
 
 impl Program {
     /// Create an empty program.
     pub fn new() -> Self {
-        Program { body: Vec::new() }
+        Program { 
+            procedures: Vec::new(),
+            body: Vec::new(),
+        }
     }
     
     /// Check if the program is trivially consistent (no oracle operations).
@@ -306,6 +369,46 @@ impl Program {
             }
         }
         false
+    }
+    
+    /// Inline all procedure calls, replacing Stmt::Call with procedure bodies.
+    /// Returns a new Program with all calls inlined.
+    pub fn inline_procedures(&self) -> Self {
+        let proc_map: std::collections::HashMap<String, &Procedure> = 
+            self.procedures.iter().map(|p| (p.name.clone(), p)).collect();
+        
+        Program {
+            procedures: Vec::new(), // Procedures are now inlined
+            body: self.inline_stmts(&self.body, &proc_map),
+        }
+    }
+    
+    fn inline_stmts(&self, stmts: &[Stmt], procs: &std::collections::HashMap<String, &Procedure>) -> Vec<Stmt> {
+        stmts.iter().map(|stmt| self.inline_stmt(stmt, procs)).collect()
+    }
+    
+    fn inline_stmt(&self, stmt: &Stmt, procs: &std::collections::HashMap<String, &Procedure>) -> Stmt {
+        match stmt {
+            Stmt::Call { name } => {
+                if let Some(proc) = procs.get(name) {
+                    // Inline the procedure body
+                    Stmt::Block(self.inline_stmts(&proc.body, procs))
+                } else {
+                    // Procedure not found - keep as is (will error at runtime)
+                    stmt.clone()
+                }
+            }
+            Stmt::If { then_branch, else_branch } => Stmt::If {
+                then_branch: self.inline_stmts(then_branch, procs),
+                else_branch: else_branch.as_ref().map(|e| self.inline_stmts(e, procs)),
+            },
+            Stmt::While { cond, body } => Stmt::While {
+                cond: self.inline_stmts(cond, procs),
+                body: self.inline_stmts(body, procs),
+            },
+            Stmt::Block(inner) => Stmt::Block(self.inline_stmts(inner, procs)),
+            other => other.clone(),
+        }
     }
 }
 

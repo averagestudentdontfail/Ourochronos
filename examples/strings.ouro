@@ -1,0 +1,29 @@
+# String and Character Literal Example
+#
+# OUROCHRONOS now supports string and character literals.
+#
+# Character literals: 'c' pushes the ASCII code onto the stack
+# String literals: "hello" pushes each character, then the length
+
+# Character literal examples
+'H' OUTPUT
+'e' OUTPUT
+'l' OUTPUT
+'l' OUTPUT
+'o' OUTPUT
+'!' OUTPUT
+'\n' OUTPUT
+
+# Character with escape sequences
+'A' OUTPUT   # Regular character
+'\t' OUTPUT  # Tab
+'B' OUTPUT   # Another character
+'\n' OUTPUT  # Newline
+
+# String literals push each character then length
+# Example: "Hi" puts H, i, 2 on stack
+#          Stack bottom → H, i, 2 ← Stack top (length)
+"Hi"
+OUTPUT   # Outputs: 2 (the length)
+OUTPUT   # Outputs: i
+OUTPUT   # Outputs: H

@@ -352,6 +352,24 @@ impl TDGBuilder {
                 // Analyze body (conservative: assume executes)
                 self.analyze(body);
             }
+            
+            Stmt::Call { name: _ } => {
+                // Procedure call: conservative, push unknown provenance
+                self.stack.push(AbstractProvenance::Const);
+            }
+            
+            Stmt::Match { cases, default } => {
+                // Pop the matched value
+                self.stack.pop();
+                
+                // Analyze all branches
+                for (_, body) in cases {
+                    self.analyze(body);
+                }
+                if let Some(default_body) = default {
+                    self.analyze(default_body);
+                }
+            }
         }
     }
     
@@ -460,6 +478,27 @@ impl TDGBuilder {
                      // We push None as we can't easily track provenance through dynamic Pick
                      self.stack.push(AbstractProvenance::Const); 
                  }
+            }
+            
+            // Array operations - conservative analysis
+            OpCode::Pack => {
+                self.stack.pop(); // n
+                self.stack.pop(); // base
+            }
+            OpCode::Unpack => {
+                self.stack.pop(); // n
+                self.stack.pop(); // base
+                self.stack.push(AbstractProvenance::Const);
+            }
+            OpCode::Index => {
+                self.stack.pop(); // index
+                self.stack.pop(); // base
+                self.stack.push(AbstractProvenance::Const);
+            }
+            OpCode::Store => {
+                self.stack.pop(); // index
+                self.stack.pop(); // base
+                self.stack.pop(); // value
             }
         }
     }

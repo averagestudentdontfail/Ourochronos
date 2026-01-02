@@ -4,10 +4,18 @@
 //! repeatedly run epochs until Present = Anamnesis (fixed point achieved).
 //!
 //! The module also provides paradox diagnosis when no fixed point exists.
+//!
+//! ## Action-Guided Execution
+//!
+//! The `ActionGuided` mode implements the **Action Principle** to solve the "Genie Effect".
+//! Instead of accepting the first fixed point found, it explores multiple seed strategies
+//! and selects the solution with minimum action (cost), preferring non-trivial,
+//! output-producing solutions.
 
 use crate::core_types::{Memory, Address, Value};
 use crate::ast::Program;
 use crate::vm::{Executor, ExecutorConfig, EpochStatus};
+use crate::action::{ActionConfig, ActionPrinciple, FixedPointSelector};
 use std::collections::HashMap;
 
 /// Result of fixed-point search.
@@ -91,7 +99,7 @@ pub enum ParadoxDiagnosis {
 }
 
 /// Execution mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ExecutionMode {
     /// Basic iteration with cycle detection.
     Standard,
@@ -99,6 +107,14 @@ pub enum ExecutionMode {
     Diagnostic,
     /// Unbounded iteration (may not terminate).
     Pure,
+    /// Action-guided search: explore multiple seeds and select the best fixed point.
+    /// This mode implements the Action Principle to solve the "Genie Effect".
+    ActionGuided {
+        /// Configuration for the action principle.
+        config: ActionConfig,
+        /// Number of different seeds to try.
+        num_seeds: usize,
+    },
 }
 
 /// Configuration for the time loop.
@@ -150,10 +166,13 @@ impl TimeLoop {
             return self.run_trivial(program);
         }
         
-        match self.config.mode {
+        match &self.config.mode {
             ExecutionMode::Standard => self.run_standard(program),
             ExecutionMode::Diagnostic => self.run_diagnostic(program),
             ExecutionMode::Pure => self.run_pure(program),
+            ExecutionMode::ActionGuided { config, num_seeds } => {
+                self.run_action_guided(program, config.clone(), *num_seeds)
+            }
         }
     }
     
@@ -352,6 +371,159 @@ impl TimeLoop {
                 return ConvergenceStatus::Timeout { max_epochs: epoch };
             }
         }
+    }
+    
+    /// Action-guided execution: explore multiple seeds and select the best fixed point.
+    /// 
+    /// This implements the Action Principle to solve the "Genie Effect". Instead of
+    /// accepting the first fixed point found, we explore multiple starting conditions
+    /// and select the solution with minimum action (cost).
+    fn run_action_guided(
+        &mut self,
+        program: &Program,
+        action_config: ActionConfig,
+        num_seeds: usize,
+    ) -> ConvergenceStatus {
+        let principle = ActionPrinciple::new(action_config);
+        let mut selector = FixedPointSelector::new(principle);
+        
+        // Generate diverse seeds
+        let seeds = self.generate_diverse_seeds(num_seeds);
+        
+        // Explore each seed
+        for seed in seeds {
+            let result = self.run_with_seed(program, &seed);
+            
+            if let ConvergenceStatus::Consistent { memory, output, epochs } = result {
+                selector.add_candidate(memory, epochs, output, seed);
+            }
+        }
+        
+        // Get count before consuming selector
+        let candidate_count = selector.candidate_count();
+        
+        // Select the best candidate
+        if let Some(best) = selector.select_best() {
+            if self.config.verbose {
+                println!("Selected fixed point with action: {:.4}", best.action);
+                println!("Explored {} candidate(s)", candidate_count);
+            }
+            
+            ConvergenceStatus::Consistent {
+                memory: best.memory,
+                output: best.output,
+                epochs: best.epochs,
+            }
+        } else {
+            // No consistent fixed point found with any seed
+            // Fall back to standard execution to get proper error
+            self.run_standard(program)
+        }
+    }
+    
+    /// Run with a specific seed memory state.
+    fn run_with_seed(&mut self, program: &Program, seed: &Memory) -> ConvergenceStatus {
+        let mut anamnesis = seed.clone();
+        let mut seen_states: HashMap<u64, usize> = HashMap::new();
+        
+        for epoch in 0..self.config.max_epochs {
+            let state_hash = anamnesis.state_hash();
+            
+            // Check for cycle
+            if seen_states.contains_key(&state_hash) {
+                // Cycle detected - this seed doesn't lead to a fixed point
+                return ConvergenceStatus::Timeout { max_epochs: epoch };
+            }
+            
+            seen_states.insert(state_hash, epoch);
+            
+            // Run epoch
+            let result = self.executor.run_epoch(program, &anamnesis);
+            
+            match result.status {
+                EpochStatus::Finished => {
+                    // Check for fixed point
+                    if result.present.values_equal(&anamnesis) {
+                        return ConvergenceStatus::Consistent {
+                            memory: result.present,
+                            output: result.output,
+                            epochs: epoch + 1,
+                        };
+                    }
+                    anamnesis = result.present;
+                }
+                EpochStatus::Paradox => {
+                    return ConvergenceStatus::Paradox {
+                        message: "Explicit PARADOX instruction".to_string(),
+                        epoch: epoch + 1,
+                    };
+                }
+                EpochStatus::Error(e) => {
+                    return ConvergenceStatus::Error {
+                        message: e,
+                        epoch: epoch + 1,
+                    };
+                }
+                _ => {}
+            }
+        }
+        
+        ConvergenceStatus::Timeout { max_epochs: self.config.max_epochs }
+    }
+    
+    /// Generate diverse seed memory states for action-guided search.
+    fn generate_diverse_seeds(&self, num_seeds: usize) -> Vec<Memory> {
+        let mut seeds = Vec::with_capacity(num_seeds);
+        
+        // Seed 0: All zeros (standard)
+        seeds.push(Memory::new());
+        
+        if num_seeds <= 1 {
+            return seeds;
+        }
+        
+        // Seed 1: Small primes (good for factorization)
+        let mut mem = Memory::new();
+        let primes = [2u64, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53];
+        for (i, &p) in primes.iter().enumerate() {
+            mem.write(i as Address, Value::new(p));
+        }
+        seeds.push(mem);
+        
+        if num_seeds <= 2 {
+            return seeds;
+        }
+        
+        // Seed 2: Sequential values 1..16 (good for permutation problems)
+        let mut mem = Memory::new();
+        for i in 0..16 {
+            mem.write(i as Address, Value::new(i as u64 + 1));
+        }
+        seeds.push(mem);
+        
+        if num_seeds <= 3 {
+            return seeds;
+        }
+        
+        // Seed 3: Powers of 2 (good for bit manipulation)
+        let mut mem = Memory::new();
+        for i in 0..16 {
+            mem.write(i as Address, Value::new(1u64 << i));
+        }
+        seeds.push(mem);
+        
+        // Additional seeds: Random-ish values based on config seed
+        for seed_idx in 4..num_seeds {
+            let mut mem = Memory::new();
+            let base = self.config.seed.wrapping_add(seed_idx as u64 * 12345);
+            for i in 0..16 {
+                let val = base.wrapping_mul(i as u64 + 1).wrapping_add(seed_idx as u64);
+                mem.write(i as Address, Value::new(val % 1000)); // Keep values reasonable
+            }
+            seeds.push(mem);
+        }
+        
+        seeds
     }
     
     /// Create initial anamnesis based on seed.
