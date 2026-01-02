@@ -6,7 +6,7 @@
 //! The fixed-point search (in timeloop.rs) repeatedly runs epochs until
 //! Present = Anamnesis (temporal consistency achieved).
 
-use crate::core_types::{Value, Address, Memory, MEMORY_SIZE};
+use crate::core_types::{Value, Address, Memory};
 use crate::ast::{OpCode, Stmt, Program};
 use crate::provenance::Provenance;
 use std::io::{self, Write, BufRead};

@@ -8,7 +8,7 @@
 use crate::core_types::{Memory, Address, Value};
 use crate::ast::Program;
 use crate::vm::{Executor, ExecutorConfig, EpochStatus};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Result of fixed-point search.
 #[derive(Debug)]

@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 /// "The value written to b depends on the oracle read of a,
 ///  with the given polarity (positive or negating)."
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TemporalDependencyGraph {
     /// Forward edges: source → set of (target, is_negating)
     edges: HashMap<Address, HashSet<(Address, bool)>>,
@@ -415,7 +416,7 @@ impl TDGBuilder {
             
             OpCode::Oracle => {
                 // Pop address, push oracle dependency
-                if let Some(addr_prov) = self.stack.pop() {
+                if let Some(_addr_prov) = self.stack.pop() {
                     // For static analysis, assume address is constant 0 or track it
                     // Here we're conservative: if we know the address, use it
                     // Otherwise, mark as depending on "all" (represented as addr 0xFFFF)

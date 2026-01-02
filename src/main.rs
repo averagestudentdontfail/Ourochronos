@@ -48,8 +48,23 @@ fn main() {
             
             let mut driver = TimeLoop::new(config);
             match driver.run(&program) {
-                ConvergenceStatus::Consistent { epochs, .. } => {
+                ConvergenceStatus::Consistent { epochs, output, .. } => {
                     println!("CONSISTENT after {} epochs.", epochs);
+                    if !output.is_empty() {
+                         println!("Final Output:");
+                         for val in output {
+                              // If it's ASCII, maybe try to print char?
+                              // For now just print value.
+                              // Actually, hello.ouro sends chars. Let's inspect output generation.
+                              // For hello world we want characters.
+                              if val.val >= 32 && val.val < 127 {
+                                   print!("{}", val.val as u8 as char);
+                              } else {
+                                   print!("[{}]", val.val);
+                              }
+                         }
+                         println!(); // Newline
+                    }
                 },
                 ConvergenceStatus::Paradox { message, .. } => {
                     println!("PARADOX: {}", message);

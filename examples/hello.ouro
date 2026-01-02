@@ -34,7 +34,7 @@ MANIFEST Bang = 33;
                   # Stack: [A0, A1, ..., A11]. Top is A11.
                   # 0 PICK is A11 (!). 
                   # 11 PICK is A0 (H).
-0 PICK Bang EQ    # Check !
+1 PICK Bang EQ    # Check ! (1 PICK because we skip the previous boolean result)
 AND
 
 IF {
