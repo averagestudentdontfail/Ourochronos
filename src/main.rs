@@ -54,12 +54,34 @@ fn main() {
                 ConvergenceStatus::Paradox { message, .. } => {
                     println!("PARADOX: {}", message);
                 },
-                ConvergenceStatus::Oscillation { period, oscillating_cells, .. } => {
+                ConvergenceStatus::Oscillation { period, oscillating_cells, diagnosis } => {
                     println!("OSCILLATION detected (period {})", period);
                     if diagnostic && !oscillating_cells.is_empty() {
                          println!("Oscillating Addresses: {:?}", oscillating_cells);
                     } else if diagnostic {
                         println!("No specific single-cell oscillations detected (global state cycle).");
+                    }
+                    
+                    if diagnostic {
+                        match diagnosis {
+                            ourochronos::timeloop::ParadoxDiagnosis::NegativeLoop { explanation, .. } => {
+                                println!("\nDIAGNOSIS (Grandfather Paradox):");
+                                println!("{}", explanation);
+                            },
+                            ourochronos::timeloop::ParadoxDiagnosis::Oscillation { cycle } => {
+                                println!("\nCycle states:");
+                                for (i, state) in cycle.iter().enumerate() {
+                                     // Only print non-empty states for brevity
+                                     let non_zeros: Vec<_> = state.iter().filter(|(_,v)| *v != 0).collect();
+                                     if !non_zeros.is_empty() {
+                                         println!("  State {}: {:?}", i, non_zeros);
+                                     }
+                                }
+                            },
+                            ourochronos::timeloop::ParadoxDiagnosis::Unknown => {
+                                println!("\nDIAGNOSIS: Unknown cause");
+                            }
+                        }
                     }
                 },
                 ConvergenceStatus::Timeout { max_epochs } => {
