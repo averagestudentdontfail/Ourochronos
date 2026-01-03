@@ -8,6 +8,7 @@ pub mod smt_encoder;
 pub mod action;
 pub mod types;
 pub mod module;
+pub mod memo;
 
 pub use core_types::{Value, Address, Memory, MEMORY_SIZE};
 pub use ast::{OpCode, Stmt, Program};
@@ -18,6 +19,7 @@ pub use smt_encoder::SmtEncoder;
 pub use action::{ActionPrinciple, ActionConfig, FixedPointSelector, FixedPointCandidate, ProvenanceMap, SeedStrategy, SeedGenerator};
 pub use types::{TemporalType, TypeChecker, TypeCheckResult, type_check};
 pub use module::{Module, ModuleRegistry};
+pub use memo::{EpochCache, CacheStats, DeltaTracker};
 pub mod analysis;
 
 mod tests;

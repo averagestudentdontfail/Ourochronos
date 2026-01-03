@@ -1,6 +1,4 @@
 # Ourochronos Coding Standard
-**Version**: 1.0
-**Applicability**: All Critical Temporal Software
 
 ## 1. Introduction
 Programming in Ourochronos is not merely instruction sequencing; it is reality engineering. A bug in Ourochronos does not just crash a program; it destabilizes a timeline. This standard enforces rigor to ensure Causal Integrity and Temporal Stability.

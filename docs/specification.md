@@ -1,6 +1,4 @@
 # Ourochronos Formal Specification
-**Version**: 1.0.0
-**Status**: Stable
 
 ## 1. Abstract Machine
 

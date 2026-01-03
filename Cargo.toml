@@ -7,11 +7,13 @@ description = "A closed timelike curve programming language"
 license = "MIT"
 
 [dependencies]
+rayon = { version = "1.10", optional = true }
+num_cpus = { version = "1.16", optional = true }
 
 [features]
 default = []
 smt = []
-parallel = []
+parallel = ["rayon", "num_cpus"]
 
 [[bin]]
 name = "ourochronos"

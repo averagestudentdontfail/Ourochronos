@@ -158,6 +158,75 @@ pub enum ConstraintKind {
     Distinct,
 }
 
+/// Configuration for heuristic-based seeding.
+#[derive(Debug, Clone, Default)]
+pub struct HeuristicConfig {
+    /// Bias toward small primes for factorization problems.
+    pub factor_bias: bool,
+    /// Bias toward permutations for sorting problems.
+    pub permutation_bias: bool,
+    /// Expected value range based on constants in program.
+    pub value_range: Option<(u64, u64)>,
+}
+
+impl SeedStrategy {
+    /// Infer the best seed strategy from program characteristics.
+    /// 
+    /// Analyzes the program to detect common patterns:
+    /// - MOD operations suggest factor-finding → SmallPrimes
+    /// - Comparison chains suggest sorting → permutation values
+    /// - Constants in program suggest bounded ranges
+    pub fn infer_from_program(program: &crate::ast::Program) -> Self {
+        let mut has_mod = false;
+        let mut has_comparisons = false;
+        let mut max_constant = 0u64;
+        
+        // Simple AST scan for heuristics
+        for stmt in &program.body {
+            Self::scan_stmt(stmt, &mut has_mod, &mut has_comparisons, &mut max_constant);
+        }
+        
+        if has_mod && max_constant > 1 {
+            // Likely factorization/divisibility problem
+            SeedStrategy::SmallPrimes
+        } else if has_comparisons && !has_mod {
+            // Likely sorting/ordering problem
+            SeedStrategy::Incremental
+        } else if max_constant > 100 {
+            // Large constants suggest bounded range
+            SeedStrategy::Random { min: 1, max: max_constant }
+        } else {
+            // Default to zero
+            SeedStrategy::Zero
+        }
+    }
+    
+    fn scan_stmt(stmt: &crate::ast::Stmt, has_mod: &mut bool, has_comp: &mut bool, max_const: &mut u64) {
+        use crate::ast::{Stmt, OpCode};
+        
+        match stmt {
+            Stmt::Op(OpCode::Mod) => *has_mod = true,
+            Stmt::Op(OpCode::Lt) | Stmt::Op(OpCode::Gt) | 
+            Stmt::Op(OpCode::Lte) | Stmt::Op(OpCode::Gte) => *has_comp = true,
+            Stmt::Push(val) => *max_const = (*max_const).max(val.val),
+            Stmt::If { then_branch, else_branch } => {
+                for s in then_branch { Self::scan_stmt(s, has_mod, has_comp, max_const); }
+                if let Some(eb) = else_branch {
+                    for s in eb { Self::scan_stmt(s, has_mod, has_comp, max_const); }
+                }
+            }
+            Stmt::While { cond, body } => {
+                for s in cond { Self::scan_stmt(s, has_mod, has_comp, max_const); }
+                for s in body { Self::scan_stmt(s, has_mod, has_comp, max_const); }
+            }
+            Stmt::Block(stmts) => {
+                for s in stmts { Self::scan_stmt(s, has_mod, has_comp, max_const); }
+            }
+            _ => {}
+        }
+    }
+}
+
 impl Default for SeedStrategy {
     fn default() -> Self {
         SeedStrategy::Zero

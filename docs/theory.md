@@ -1,6 +1,4 @@
 # Ourochronos Theory & Design
-**Version**: 2.0
-**Status**: Comprehensive
 
 > "The future causes the past just as much as the past causes the future."
 
@@ -107,6 +105,3 @@ The interpreter maintains a **Causal Graph** tracking dependencies:
 *   Nodes: Memory addresses.
 *   Edges: "Cell A was used to compute Cell B".
 *   Cycle Detection: Tarjan's SCS algorithm on the Causal Graph identifies Negative Loops staticly.
-
----
-*Derived from the Ourochronos Specification v1.0 and Addendums I & II.*
