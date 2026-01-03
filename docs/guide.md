@@ -2,12 +2,8 @@
 
 *Patterns and Practices for Temporal Computation*
 
----
-
 > "The best way to predict the future is to invent it."  
 > — Alan Kay
-
----
 
 ## Introduction
 

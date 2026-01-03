@@ -5,12 +5,8 @@
 **Version:** 2.0  
 **Status:** Normative
 
----
-
 > "With great power comes great responsibility."  
-> — Voltaire (paraphrased)
-
----
+> — Uncle Ben
 
 ## Preface
 

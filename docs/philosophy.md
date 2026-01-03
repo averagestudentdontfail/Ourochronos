@@ -2,12 +2,8 @@
 
 *On Time, Causality, and the Nature of Computation*
 
----
-
 > "What we call the past is built on bits."  
 > — John Archibald Wheeler
-
----
 
 ## Preface
 

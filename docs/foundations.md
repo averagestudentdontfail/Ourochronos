@@ -2,12 +2,8 @@
 
 *From Fixed Points to Temporal Computation*
 
----
-
 > "The only way to rectify our reasonings is to make them as tangible as those of the Mathematicians."  
 > — Gottfried Wilhelm Leibniz
-
----
 
 ## Overview
 
