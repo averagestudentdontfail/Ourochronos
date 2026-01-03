@@ -472,7 +472,7 @@ impl TypeChecker {
             }
 
             // Dynamic stack structure changes cannot be statically typed easily
-            OpCode::Roll | OpCode::Reverse | OpCode::StrRev | OpCode::StrCat | OpCode::StrSplit | OpCode::Assert => {
+            OpCode::Roll | OpCode::Reverse | OpCode::StrRev | OpCode::StrCat | OpCode::StrSplit | OpCode::Assert | OpCode::Exec | OpCode::Dip | OpCode::Keep | OpCode::Bi | OpCode::Rec => {
                 // Conservative approach: do nothing or invalidate stack?
                 // For this prototype, we ignore their effect on type stack structure
             }

@@ -1,0 +1,31 @@
+"Testing EXEC" OUTPUT
+[ 10 ] EXEC
+DUP 10 EQ ASSERT "EXEC failed"
+DROP
+"EXEC passed" OUTPUT
+
+"Testing DIP" OUTPUT
+20 [ 10 ] DIP 
+DUP 20 EQ ASSERT "DIP top check failed"
+SWAP DUP 10 EQ ASSERT "DIP bottom check failed"
+DROP DROP
+"DIP passed" OUTPUT
+
+"Testing KEEP" OUTPUT
+10 [ 1 ADD ] KEEP
+// "Stack after KEEP (expect 11 10):" OUTPUT
+// Stack is now 11 10 (top)
+DUP 10 EQ ASSERT "KEEP restore check failed"
+SWAP DUP 11 EQ ASSERT "KEEP action check failed"
+DROP DROP
+"KEEP passed" OUTPUT
+
+"Testing BI" OUTPUT
+10 [ 1 ADD ] [ 2 MUL ] BI
+// Stack should be 11 20 (top)
+DUP 20 EQ ASSERT "BI q2 check failed"
+SWAP DUP 11 EQ ASSERT "BI q1 check failed"
+DROP DROP
+"BI passed" OUTPUT
+
+"All Combinator Tests Passed" OUTPUT

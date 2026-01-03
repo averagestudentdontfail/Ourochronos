@@ -1,0 +1,37 @@
+"Testing Recursion..." OUTPUT
+"---" OUTPUT
+
+"Factorial 5" OUTPUT
+// Reset
+DROP // clean stack
+
+1 5 // acc n
+[
+    // Stack: acc n quote
+    // Move quote out of way:
+    ROT // n quote acc
+    SWAP // n acc quote
+    // Check n
+    ROT // acc quote n
+    DUP 1 LTE IF {
+        // Base case: n <= 1.
+        // Stack: acc quote n
+        DROP DROP // acc
+    } ELSE {
+        // Recursive step
+        // Stack: acc quote n
+        // Stack: acc quote n
+        DUP // acc quote n n
+        3 ROLL // quote n n acc
+        MUL // quote n acc'
+        SWAP // quote acc' n
+        1 SUB // quote acc' n-1
+        ROT // acc' n-1 quote
+        REC
+    }
+]
+REC
+// Stack should be 120
+DUP 120 EQ ASSERT "Factorial failed"
+DROP
+"Recursion passed" OUTPUT

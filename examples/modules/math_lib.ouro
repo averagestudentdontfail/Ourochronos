@@ -1,0 +1,10 @@
+PROC ABS ( n -- abs ) {
+    DUP 0 LT IF {
+        0 SWAP SUB
+    }
+}
+
+PROC ADDMUL ( a b c -- res ) {
+    // res = (a+b)*c
+    ROT ROT ADD MUL
+}

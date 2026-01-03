@@ -507,7 +507,7 @@ impl TDGBuilder {
             }
 
             // Dynamic stack structure changes
-            OpCode::Roll | OpCode::Reverse | OpCode::StrRev | OpCode::StrCat | OpCode::StrSplit | OpCode::Assert => {
+            OpCode::Roll | OpCode::Reverse | OpCode::StrRev | OpCode::StrCat | OpCode::StrSplit | OpCode::Assert | OpCode::Exec | OpCode::Dip | OpCode::Keep | OpCode::Bi | OpCode::Rec => {
                 // Cannot track provenance through dynamic stack permutations
                 // In a production system, this would taint the whole stack
             }

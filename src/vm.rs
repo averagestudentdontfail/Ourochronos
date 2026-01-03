@@ -125,7 +125,7 @@ impl Executor {
         self.input_cursor = 0;
         self.inputs_consumed.clear();
         
-        match self.execute_block(&program.body, &mut state) {
+        match self.execute_block(&program.body, &mut state, &program.quotes) {
             Ok(_) => {}
             Err(e) => {
                 state.status = EpochStatus::Error(e);
@@ -145,9 +145,14 @@ impl Executor {
             inputs_consumed: std::mem::take(&mut self.inputs_consumed),
         }
     }
+
+    /// Execute a program (sequence of statements) within an epoch.
+    pub fn execute(&mut self, state: &mut VmState, program: &Program) -> Result<(), String> {
+        self.execute_block(&program.body, state, &program.quotes)
+    }
     
     /// Execute a block of statements.
-    fn execute_block(&mut self, stmts: &[Stmt], state: &mut VmState) -> Result<(), String> {
+    fn execute_block(&mut self, stmts: &[Stmt], state: &mut VmState, quotes: &[Vec<Stmt>]) -> Result<(), String> {
         for stmt in stmts {
             // Check for termination conditions
             match &state.status {
@@ -163,31 +168,31 @@ impl Executor {
                 return Ok(());
             }
             
-            self.execute_stmt(stmt, state)?;
+            self.execute_stmt(stmt, state, quotes)?;
         }
         Ok(())
     }
     
     /// Execute a single statement.
-    fn execute_stmt(&mut self, stmt: &Stmt, state: &mut VmState) -> Result<(), String> {
+    fn execute_stmt(&mut self, stmt: &Stmt, state: &mut VmState, quotes: &[Vec<Stmt>]) -> Result<(), String> {
         state.instructions_executed += 1;
         
         match stmt {
-            Stmt::Op(op) => self.execute_op(*op, state),
+            Stmt::Op(op) => self.execute_op(*op, state, quotes),
             
             Stmt::Push(v) => {
                 state.stack.push(v.clone());
                 Ok(())
             }
             
-            Stmt::Block(stmts) => self.execute_block(stmts, state),
+            Stmt::Block(stmts) => self.execute_block(stmts, state, quotes),
             
             Stmt::If { then_branch, else_branch } => {
                 let cond = self.pop(state)?;
                 if cond.to_bool() {
-                    self.execute_block(then_branch, state)
+                    self.execute_block(then_branch, state, quotes)
                 } else if let Some(else_stmts) = else_branch {
-                    self.execute_block(else_stmts, state)
+                    self.execute_block(else_stmts, state, quotes)
                 } else {
                     Ok(())
                 }
@@ -201,7 +206,7 @@ impl Executor {
                     }
                     
                     // Evaluate condition
-                    self.execute_block(cond, state)?;
+                    self.execute_block(cond, state, quotes)?;
                     let result = self.pop(state)?;
                     
                     if !result.to_bool() {
@@ -209,7 +214,7 @@ impl Executor {
                     }
                     
                     // Execute body
-                    self.execute_block(body, state)?;
+                    self.execute_block(body, state, quotes)?;
                     
                     // Gas check for infinite loop prevention
                     if state.instructions_executed >= self.config.max_instructions {
@@ -235,7 +240,7 @@ impl Executor {
                 for (pattern, body) in cases {
                     if val == *pattern {
                         for stmt in body {
-                            self.execute_stmt(stmt, state)?;
+                            self.execute_stmt(stmt, state, quotes)?;
                         }
                         matched = true;
                         break;
@@ -246,7 +251,7 @@ impl Executor {
                 if !matched {
                     if let Some(default_body) = default {
                         for stmt in default_body {
-                            self.execute_stmt(stmt, state)?;
+                            self.execute_stmt(stmt, state, quotes)?;
                         }
                     }
                 }
@@ -271,7 +276,7 @@ impl Executor {
                 }
                 
                 // Execute the body
-                let result = self.execute_block(body, state);
+                let result = self.execute_block(body, state, quotes);
                 
                 match result {
                     Ok(()) => {
@@ -293,7 +298,7 @@ impl Executor {
     }
     
     /// Execute a single opcode.
-    fn execute_op(&mut self, op: OpCode, state: &mut VmState) -> Result<(), String> {
+    fn execute_op(&mut self, op: OpCode, state: &mut VmState, quotes: &[Vec<Stmt>]) -> Result<(), String> {
         match op {
             // ═══════════════════════════════════════════════════════════
             // Stack Manipulation
@@ -346,6 +351,117 @@ impl Executor {
                     let start = len - count;
                     state.stack[start..].reverse();
                 }
+            }
+            
+            OpCode::Exec => {
+                let id_val = self.pop(state)?;
+                let id = id_val.val as usize;
+                
+                if id >= quotes.len() {
+                    return Err(format!("Exec: Invalid quote ID {}", id));
+                }
+                
+                // Recursively execute quote
+                // Use recursion guard? (not strict requirement yet, gas limit handles it)
+                self.execute_block(&quotes[id], state, quotes)?;
+            }
+            
+            OpCode::Dip => {
+                let id_val = self.pop(state)?;
+                let id = id_val.val as usize;
+                
+                if id >= quotes.len() {
+                    return Err(format!("Dip: Invalid quote ID {}", id));
+                }
+                
+                // Pop X
+                let x = self.pop(state)?;
+                
+                // Execute quote
+                self.execute_block(&quotes[id], state, quotes)?;
+                
+                // Restore X
+                state.stack.push(x);
+            }
+            
+            OpCode::Keep => {
+                let id_val = self.pop(state)?;
+                let id = id_val.val as usize;
+                
+                if id >= quotes.len() {
+                    return Err(format!("Keep: Invalid quote ID {}", id));
+                }
+                
+                // Pop X (to be kept)
+                let x = self.pop(state)?;
+                
+                // Restore X (it stays on stack)
+                state.stack.push(x.clone());
+                
+                // Execute quote (it sees X)
+                self.execute_block(&quotes[id], state, quotes)?;
+                
+                // Keep: ( x q -- .. x ). 
+                // Wait. Keep usually means preserve x across call.
+                // Standard: ( x q -- .. x )
+                // Apply q to x.
+                // Stack: x. q.
+                // q runs. Consumes x? Maybe.
+                // If q consumes x, we need to restore it.
+                // "Keep" implies we KEEP a copy of x for later use?
+                // Or we keep x on top?
+                // Factor `keep`: ( x q -- .. x )
+                // "Call quote with x on stack, restoring x afterwards"
+                
+                // Implementation:
+                // Pop q. Pop x.
+                // Push x.
+                // Run q.
+                // Push x.
+                // But if q consumes x, we need to ensure it was there.
+                // My implementation:
+                // Pop q, x.
+                // Push x. 
+                // Execute q. (q sees x).
+                // Push x. (Restores x).
+                state.stack.push(x);
+            }
+            
+            OpCode::Bi => {
+                 let q_val = self.pop(state)?;
+                 let q_id = q_val.val as usize;
+                 
+                 let p_val = self.pop(state)?;
+                 let p_id = p_val.val as usize;
+                 
+                 if q_id >= quotes.len() || p_id >= quotes.len() {
+                     return Err("Bi: Invalid quote ID".to_string());
+                 }
+                 
+                 let x = self.pop(state)?;
+                 
+                 // Apply P to X
+                 state.stack.push(x.clone());
+                 self.execute_block(&quotes[p_id], state, quotes)?;
+                 
+                 // Apply Q to X
+                 state.stack.push(x);
+                 self.execute_block(&quotes[q_id], state, quotes)?;
+            }
+            
+            OpCode::Rec => {
+                let id_val = self.pop(state)?;
+                let id = id_val.val as usize;
+                
+                if id >= quotes.len() {
+                    return Err(format!("Rec: Invalid quote ID {}", id));
+                }
+                
+                // Push quote back (for recursion inside)
+                state.stack.push(id_val);
+                
+                // Execute quote
+                self.execute_block(&quotes[id], state, quotes)?;
             }
             
             OpCode::StrRev => {

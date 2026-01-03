@@ -15,7 +15,7 @@ OUTPUT # Output string "123"
 NEWLINE
 
 # Test 4: Split
-"A,B,C" "," SPLIT
+"A,B,C" ',' SPLIT
 # Stack: "A" "B" "C" 3
 # Output count
 OUTPUT NEWLINE

@@ -1,0 +1,14 @@
+IMPORT "examples/modules/math_lib.ouro"
+
+"Testing Modules..." OUTPUT
+"---" OUTPUT
+
+"Test ABS(-5):" OUTPUT
+-5 ABS OUTPUT // Should handle ABS from lib
+NEWLINE
+
+"Test ADDMUL(2,3,4):" OUTPUT
+2 3 4 ADDMUL OUTPUT // (2+3)*4 = 20
+NEWLINE
+
+"Module Test Complete" OUTPUT

@@ -57,6 +57,30 @@ pub enum OpCode {
     /// Reverse the top n elements.
     /// Stack: ( n -- )
     Reverse,
+
+    /// Execute the quotation (code block) at the given index.
+    /// Stack: ( quote_id -- )
+    Exec,
+
+    /// Execute a quotation while hiding the top element of the stack.
+    /// Stack: ( x quote_id -- x )
+    Dip,
+
+    /// Keep x, execute quote, restore x (below result).
+    /// Stack: ( x quote -- ... x )
+    Keep,
+    
+    /// Bi-call: Apply p to x, then q to x.
+    /// Stack: ( x p q -- ... ... )
+    Bi,
+    
+    /// Recursive combinator: Execute quote with quote on stack.
+    /// Stack: ( quote -- ... )
+    Rec,
+    
+    // ════ String Operations ════
+    
+    // ════ String Operations ════
     
     // ════ String Operations ════
     
@@ -264,6 +288,11 @@ impl OpCode {
             OpCode::Output => "OUTPUT",
             OpCode::Roll => "ROLL",
             OpCode::Reverse => "REVERSE",
+            OpCode::Exec => "EXEC",
+            OpCode::Dip => "DIP",
+            OpCode::Keep => "KEEP",
+            OpCode::Bi => "BI",
+            OpCode::Rec => "REC",
             OpCode::StrRev => "STR_REV",
             OpCode::StrCat => "STR_CAT",
             OpCode::StrSplit => "STR_SPLIT",
@@ -297,6 +326,11 @@ impl OpCode {
             OpCode::Store => (3, 0),   // value, base, index
             OpCode::Roll => (1, 0),    // pops n
             OpCode::Reverse => (1, 0), // pops n
+            OpCode::Exec => (1, 0),    // pops quote_id
+            OpCode::Dip => (2, 1),     // pops x, quote_id; pushes x (restores it)
+            OpCode::Keep => (2, 1),    // pops x, quote; pushes x (under results?) -> complicated stack effect
+            OpCode::Bi => (3, 0),      // pops x, p, q
+            OpCode::Rec => (1, 0),     // pops quote (but pushes it back inside execution)
             OpCode::StrRev => (1, 1),  // pops len, pushes len
             OpCode::StrCat => (2, 1),  // pops len1, len2, pushes len_sum
             OpCode::StrSplit => (2, 1), // variable return
@@ -394,6 +428,8 @@ pub struct Procedure {
 pub struct Program {
     /// Procedure definitions.
     pub procedures: Vec<Procedure>,
+    /// Quotations (anonymous code blocks) indexed by ID.
+    pub quotes: Vec<Vec<Stmt>>,
     /// Main program body.
     pub body: Vec<Stmt>,
 }
@@ -403,6 +439,7 @@ impl Program {
     pub fn new() -> Self {
         Program { 
             procedures: Vec::new(),
+            quotes: Vec::new(),
             body: Vec::new(),
         }
     }
@@ -455,6 +492,7 @@ impl Program {
         
         Program {
             procedures: Vec::new(), // Procedures are now inlined
+            quotes: self.quotes.iter().map(|q| self.inline_stmts(q, &proc_map)).collect(),
             body: self.inline_stmts(&self.body, &proc_map),
         }
     }
