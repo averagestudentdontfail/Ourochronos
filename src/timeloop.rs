@@ -16,6 +16,7 @@ use crate::core_types::{Memory, Address, Value};
 use crate::ast::Program;
 use crate::vm::{Executor, ExecutorConfig, EpochStatus};
 use crate::action::{ActionConfig, ActionPrinciple, FixedPointSelector};
+use crate::memo::{EpochCache, MemoizedResult};
 use std::collections::HashMap;
 
 /// Result of fixed-point search.
@@ -160,6 +161,8 @@ pub struct TimeLoop {
     /// Inputs captured during epoch 0, frozen for replay in subsequent epochs.
     /// This ensures the Temporal Input Invariant: External → Loop causality only.
     captured_inputs: Option<Vec<u64>>,
+    /// Epoch result cache for memoization during fixed-point search.
+    cache: EpochCache,
 }
 
 impl TimeLoop {
@@ -177,7 +180,13 @@ impl TimeLoop {
             config,
             executor: Executor::with_config(exec_config),
             captured_inputs: None,
+            cache: EpochCache::with_capacity(1024),
         }
+    }
+    
+    /// Get cache statistics.
+    pub fn cache_stats(&self) -> crate::memo::CacheStats {
+        self.cache.stats()
     }
     
     /// Run the fixed-point search.
@@ -227,6 +236,8 @@ impl TimeLoop {
     /// Implements the Temporal Input Invariant: inputs are captured during epoch 0
     /// and frozen for replay in all subsequent epochs. This ensures that external
     /// inputs cannot be influenced by the temporal loop (External → Loop only).
+    /// 
+    /// Uses epoch caching to memoize results and skip redundant executions.
     fn run_standard(&mut self, program: &Program) -> ConvergenceStatus {
         let mut anamnesis = self.create_initial_anamnesis();
         let mut seen_states: HashMap<u64, usize> = HashMap::new();
@@ -242,7 +253,32 @@ impl TimeLoop {
             
             seen_states.insert(state_hash, epoch);
             
-            // Run epoch
+            // Check cache first
+            if let Some(cached) = self.cache.get(state_hash) {
+                // Use cached result
+                match &cached.status {
+                    EpochStatus::Finished => {
+                        if cached.present.values_equal(&anamnesis) {
+                            return ConvergenceStatus::Consistent {
+                                memory: cached.present.clone(),
+                                output: cached.output.clone(),
+                                epochs: epoch + 1,
+                            };
+                        }
+                        anamnesis = cached.present.clone();
+                        continue;
+                    }
+                    EpochStatus::Paradox => {
+                        return ConvergenceStatus::Paradox {
+                            message: "Explicit PARADOX instruction (cached)".to_string(),
+                            epoch: epoch + 1,
+                        };
+                    }
+                    _ => {} // Run epoch for other statuses
+                }
+            }
+            
+            // Run epoch (cache miss)
             let result = self.executor.run_epoch(program, &anamnesis);
             
             // On epoch 0, capture inputs and freeze them for subsequent epochs
@@ -254,10 +290,20 @@ impl TimeLoop {
                 }
             }
             
+            // Store in cache
+            self.cache.insert(state_hash, MemoizedResult {
+                present: result.present.clone(),
+                output: result.output.clone(),
+                status: result.status.clone(),
+            });
+            
             match result.status {
                 EpochStatus::Finished => {
                     // Check for fixed point
                     if result.present.values_equal(&anamnesis) {
+                        if self.config.verbose {
+                            println!("{}", self.cache.stats());
+                        }
                         return ConvergenceStatus::Consistent {
                             memory: result.present,
                             output: result.output,

@@ -370,6 +370,11 @@ impl TDGBuilder {
                     self.analyze(default_body);
                 }
             }
+            
+            Stmt::TemporalScope { body, .. } => {
+                // Temporal scope: analyze the body
+                self.analyze(body);
+            }
         }
     }
     
@@ -499,6 +504,12 @@ impl TDGBuilder {
                 self.stack.pop(); // index
                 self.stack.pop(); // base
                 self.stack.pop(); // value
+            }
+
+            // Dynamic stack structure changes
+            OpCode::Roll | OpCode::Reverse | OpCode::StrRev | OpCode::StrCat | OpCode::StrSplit | OpCode::Assert => {
+                // Cannot track provenance through dynamic stack permutations
+                // In a production system, this would taint the whole stack
             }
         }
     }

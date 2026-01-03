@@ -43,6 +43,8 @@ fn main() {
     
     let tokens = tokenize(&source);
     let mut parser = Parser::new(&tokens);
+    parser.register_procedures(ourochronos::StdLib::procedures());
+    
     match parser.parse_program() {
         Ok(parsed_program) => {
             // Inline all procedure calls

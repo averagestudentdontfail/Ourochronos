@@ -45,3 +45,6 @@ lsp = ["lsp-server", "lsp-types", "serde_json", "serde"]
 [[bin]]
 name = "ourochronos"
 path = "src/main.rs"
+
+[dev-dependencies]
+proptest = "1.4"

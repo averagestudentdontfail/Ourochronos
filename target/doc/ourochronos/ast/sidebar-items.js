@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Effect","OpCode","Stmt"],"struct":["Procedure","Program"]};

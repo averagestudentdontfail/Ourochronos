@@ -48,7 +48,30 @@ pub enum OpCode {
     /// 0 PICK is equivalent to DUP. 1 PICK is equivalent to OVER.
     /// Stack: ( n -- v )
     Pick,
+
+    /// Roll the nth element to the top, shifting others down.
+    /// 0 ROLL is Nop. 1 ROLL is SWAP.
+    /// Stack: ( n -- )
+    Roll,
+
+    /// Reverse the top n elements.
+    /// Stack: ( n -- )
+    Reverse,
     
+    // ════ String Operations ════
+    
+    /// Reverse a string (len-suffixed sequence).
+    /// Stack: ( chars... len -- reversed_chars... len )
+    StrRev,
+    
+    /// Concatenate two strings.
+    /// Stack: ( c1.. len1 c2.. len2 -- c1..c2.. (len1+len2) )
+    StrCat,
+    
+    /// Split string by delimiter char.
+    /// Stack: ( chars... len delim_char -- s1 s2 .. sn count )
+    StrSplit,
+
     // ═══════════════════════════════════════════════════════════════════
     // Arithmetic (modular, wrapping at 2^64)
     // ═══════════════════════════════════════════════════════════════════
@@ -76,6 +99,11 @@ pub enum OpCode {
     /// Negation (two's complement).
     /// Stack: ( a -- -a )
     Neg,
+
+    /// Assertion.
+    /// Pops length, chars, then condition. panics if condition is 0.
+    /// Stack: ( cond chars... len -- )
+    Assert,
     
     // ═══════════════════════════════════════════════════════════════════
     // Bitwise Logic
@@ -211,6 +239,7 @@ impl OpCode {
             OpCode::Div => "DIV",
             OpCode::Mod => "MOD",
             OpCode::Neg => "NEG",
+            OpCode::Assert => "ASSERT",
             OpCode::Not => "NOT",
             OpCode::And => "AND",
             OpCode::Or => "OR",
@@ -233,6 +262,11 @@ impl OpCode {
             OpCode::Store => "STORE",
             OpCode::Input => "INPUT",
             OpCode::Output => "OUTPUT",
+            OpCode::Roll => "ROLL",
+            OpCode::Reverse => "REVERSE",
+            OpCode::StrRev => "STR_REV",
+            OpCode::StrCat => "STR_CAT",
+            OpCode::StrSplit => "STR_SPLIT",
         }
     }
     
@@ -248,7 +282,9 @@ impl OpCode {
             OpCode::Rot => (3, 3),
             OpCode::Depth | OpCode::Input => (0, 1),
             OpCode::Pick => (1, 1),
-            OpCode::Neg | OpCode::Not => (1, 1),
+            OpCode::Neg => (1, 1),
+            OpCode::Assert => (2, 0), // Effectively consumes cond + len (and chars via len)
+            OpCode::Not => (1, 1),
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod |
             OpCode::And | OpCode::Or | OpCode::Xor | OpCode::Shl | OpCode::Shr |
             OpCode::Eq | OpCode::Neq | OpCode::Lt | OpCode::Gt | OpCode::Lte | OpCode::Gte => (2, 1),
@@ -259,6 +295,11 @@ impl OpCode {
             OpCode::Unpack => (2, 0),  // base, n (produces n values)
             OpCode::Index => (2, 1),   // base, index -> value
             OpCode::Store => (3, 0),   // value, base, index
+            OpCode::Roll => (1, 0),    // pops n
+            OpCode::Reverse => (1, 0), // pops n
+            OpCode::StrRev => (1, 1),  // pops len, pushes len
+            OpCode::StrCat => (2, 1),  // pops len1, len2, pushes len_sum
+            OpCode::StrSplit => (2, 1), // variable return
         }
     }
 }
@@ -303,6 +344,34 @@ pub enum Stmt {
         /// Default case if no pattern matches.
         default: Option<Vec<Stmt>>,
     },
+    
+    /// Temporal scope block.
+    /// TEMPORAL <base> <size> { body }
+    /// 
+    /// Creates an isolated memory region for temporal operations.
+    /// ORACLE/PROPHECY within the block are relative to base address.
+    /// Changes within the scope are propagated to parent on successful exit.
+    /// If the block induces a paradox, changes are discarded.
+    TemporalScope {
+        /// Base address for the isolated region.
+        base: u64,
+        /// Size of the isolated region.
+        size: u64,
+        /// Body of the temporal scope.
+        body: Vec<Stmt>,
+    },
+}
+
+/// Side effect behavior of a procedure.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Effect {
+    /// Procedure is pure (no side effects, deterministic given inputs).
+    /// Implies no ORACLE reads and no PROPHECY writes.
+    Pure,
+    /// Procedure reads from the specific oracle address.
+    Reads(u64),
+    /// Procedure writes to the specific prophecy address.
+    Writes(u64),
 }
 
 /// A procedure definition.
@@ -314,6 +383,8 @@ pub struct Procedure {
     pub params: Vec<String>,
     /// Number of return values pushed to stack.
     pub returns: usize,
+    /// Effect annotations declared by the user.
+    pub effects: Vec<Effect>,
     /// Body of the procedure.
     pub body: Vec<Stmt>,
 }
@@ -365,6 +436,11 @@ impl Program {
                         return true;
                     }
                 }
+                Stmt::TemporalScope { body, .. } => {
+                    if self.contains_oracle(body) {
+                        return true;
+                    }
+                }
                 _ => {}
             }
         }
@@ -407,6 +483,11 @@ impl Program {
                 body: self.inline_stmts(body, procs),
             },
             Stmt::Block(inner) => Stmt::Block(self.inline_stmts(inner, procs)),
+            Stmt::TemporalScope { base, size, body } => Stmt::TemporalScope {
+                base: *base,
+                size: *size,
+                body: self.inline_stmts(body, procs),
+            },
             other => other.clone(),
         }
     }

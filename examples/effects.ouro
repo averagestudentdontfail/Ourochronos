@@ -1,0 +1,30 @@
+# examples/effects.ouro
+# Demonstrates procedure effect annotations.
+
+TEMPORAL counter @ 0 DEFAULT 0;
+
+# Pure function: consumes 2 items, produces 1
+PROCEDURE pure_add(a, b) PURE {
+    ADD
+}
+
+# Reads from specific address 0
+PROCEDURE read_counter() READS(0) {
+    0 ORACLE
+}
+
+# Writes to specific address 0
+PROCEDURE write_counter(val) WRITES(0) {
+    0 PROPHECY
+}
+
+10 20 pure_add 
+OUTPUT # Expected: 30
+
+0 ORACLE # Initial value of counter (0)
+OUTPUT # Expected: 0
+
+42 write_counter # Write 42 to counter
+
+read_counter     # Read back 42
+OUTPUT # Expected: 42

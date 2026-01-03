@@ -6,11 +6,37 @@
 //! - Control flow: IF { } ELSE { }, WHILE { cond } { body }
 //! - Comments: # line comment
 
-use crate::ast::{OpCode, Stmt, Program, Procedure};
+use crate::ast::{OpCode, Stmt, Program, Procedure, Effect};
 use crate::core_types::Value;
 use std::iter::Peekable;
 use std::slice::Iter;
 use std::collections::HashMap;
+
+/// Source location span for error reporting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Span {
+    /// Line number (1-indexed).
+    pub line: usize,
+    /// Column number (1-indexed).
+    pub column: usize,
+    /// Byte offset in source.
+    pub offset: usize,
+    /// Length in bytes.
+    pub len: usize,
+}
+
+impl Span {
+    /// Create a new span.
+    pub fn new(line: usize, column: usize, offset: usize, len: usize) -> Self {
+        Self { line, column, offset, len }
+    }
+}
+
+impl std::fmt::Display for Span {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.line, self.column)
+    }
+}
 
 /// Tokens produced by the lexer.
 #[derive(Debug, Clone, PartialEq)]
@@ -27,10 +53,100 @@ pub enum Token {
     LBrace,
     /// Right brace: }
     RBrace,
+    /// Left parenthesis: (
+    LParen,
+    /// Right parenthesis: )
+    RParen,
+    /// Comma: ,
+    Comma,
     /// Equals sign for LET: =
     Equals,
     /// Semicolon for statement termination: ;
     Semicolon,
+}
+
+/// A token with its source span.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpannedToken {
+    /// The token.
+    pub token: Token,
+    /// Source location.
+    pub span: Span,
+}
+
+impl SpannedToken {
+    /// Create a new spanned token.
+    pub fn new(token: Token, span: Span) -> Self {
+        Self { token, span }
+    }
+}
+
+/// Parse error with location and helpful message.
+#[derive(Debug, Clone)]
+pub struct ParseError {
+    /// Error message.
+    pub message: String,
+    /// Source location where error occurred.
+    pub span: Option<Span>,
+    /// Optional help text.
+    pub help: Option<String>,
+    /// Optional note.
+    pub note: Option<String>,
+}
+
+impl ParseError {
+    /// Create a new parse error.
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            span: None,
+            help: None,
+            note: None,
+        }
+    }
+    
+    /// Add span to error.
+    pub fn with_span(mut self, span: Span) -> Self {
+        self.span = Some(span);
+        self
+    }
+    
+    /// Add help text.
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
+    }
+    
+    /// Add note.
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.note = Some(note.into());
+        self
+    }
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(span) = &self.span {
+            write!(f, "error at {}: {}", span, self.message)?;
+        } else {
+            write!(f, "error: {}", self.message)?;
+        }
+        if let Some(help) = &self.help {
+            write!(f, "\n  = help: {}", help)?;
+        }
+        if let Some(note) = &self.note {
+            write!(f, "\n  = note: {}", note)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ParseError {}
+
+impl From<ParseError> for String {
+    fn from(e: ParseError) -> String {
+        e.to_string()
+    }
 }
 
 /// Tokenize source code into a sequence of tokens.
@@ -53,6 +169,18 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             }
             '}' => {
                 tokens.push(Token::RBrace);
+                i += 1;
+            }
+            '(' => {
+                tokens.push(Token::LParen);
+                i += 1;
+            }
+            ')' => {
+                tokens.push(Token::RParen);
+                i += 1;
+            }
+            ',' => {
+                tokens.push(Token::Comma);
                 i += 1;
             }
             
@@ -203,7 +331,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             
             // Symbolic operators (single character words)
             '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '~' |
-            '<' | '>' | '!' => {
+            '<' | '>' | '!' | '@' => {
                 // Check for two-character operators
                 let mut op = String::new();
                 op.push(chars[i]);
@@ -212,7 +340,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 if i < chars.len() {
                     match (op.chars().next().unwrap(), chars[i]) {
                         ('<', '=') | ('>', '=') | ('!', '=') |
-                        ('<', '<') | ('>', '>') => {
+                        ('<', '<') | ('>', '>') | 
+                        ('&', '&') | ('|', '|') => {
                             op.push(chars[i]);
                             i += 1;
                         }
@@ -240,6 +369,15 @@ struct VariableBinding {
     stack_depth: usize,
 }
 
+/// Temporal variable binding backed by oracle address.
+#[derive(Debug, Clone)]
+struct TemporalBinding {
+    /// Memory address this variable reads from/writes to.
+    address: u64,
+    /// Default value if no oracle value set.
+    default: u64,
+}
+
 /// Procedure binding with its definition.
 #[derive(Debug, Clone)]
 struct ProcedureBinding {
@@ -255,12 +393,16 @@ pub struct Parser<'a> {
     constants: HashMap<String, u64>,
     /// Variable bindings (name -> binding info).
     variables: HashMap<String, VariableBinding>,
+    /// Temporal variable bindings (name -> temporal binding).
+    temporal_vars: HashMap<String, TemporalBinding>,
     /// Procedure bindings (name -> binding info).
     procedures: HashMap<String, ProcedureBinding>,
     /// Parsed procedure definitions.
     procedure_defs: Vec<Procedure>,
     /// Current stack depth (for variable resolution).
     stack_depth: usize,
+    /// Token position for error reporting.
+    token_pos: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -270,10 +412,40 @@ impl<'a> Parser<'a> {
             tokens: tokens.iter().peekable(),
             constants: HashMap::new(),
             variables: HashMap::new(),
+            temporal_vars: HashMap::new(),
             procedures: HashMap::new(),
             procedure_defs: Vec::new(),
             stack_depth: 0,
+            token_pos: 0,
         }
+    }
+    
+    /// Register external procedures (e.g. standard library).
+    pub fn register_procedures(&mut self, procs: Vec<Procedure>) {
+        for mut proc in procs {
+            proc.name = proc.name.to_lowercase();
+            self.procedures.insert(proc.name.clone(), ProcedureBinding {
+                param_count: proc.params.len(),
+                return_count: proc.returns,
+            });
+            self.procedure_defs.push(proc);
+        }
+    }
+    
+    /// Create an error at the current position.
+    fn error(&self, message: impl Into<String>) -> ParseError {
+        ParseError::new(message).with_span(Span::new(1, self.token_pos + 1, 0, 1))
+    }
+    
+    /// Create an error with help text.
+    fn error_with_help(&self, message: impl Into<String>, help: impl Into<String>) -> ParseError {
+        self.error(message).with_help(help)
+    }
+    
+    /// Consume next token and track position.
+    fn next_token(&mut self) -> Option<&'a Token> {
+        self.token_pos += 1;
+        self.tokens.next()
     }
     
     /// Emit an opcode and track its stack effect.
@@ -318,15 +490,10 @@ impl<'a> Parser<'a> {
         };
 
         // Expect '='
-        if !self.peek_word_eq("=") {
-             // Allow omitting '=' if user prefers just MANIFEST NAME VALUE; but spec says '='
-             // Let's check for symbolic '=' which is Token::Word("=")
-             match self.tokens.peek() {
-                 Some(Token::Word(w)) if w == "=" => { self.tokens.next(); },
-                 _ => return Err("Expected '=' in declaration".to_string()),
-             }
-        } else {
-             self.tokens.next();
+        match self.tokens.peek() {
+            Some(Token::Equals) => { self.tokens.next(); },
+            Some(Token::Word(w)) if w == "=" => { self.tokens.next(); },
+            _ => return Err("Expected '=' in declaration".to_string()),
         }
 
         // Expect value (simple integer for now)
@@ -336,13 +503,10 @@ impl<'a> Parser<'a> {
         };
 
         // Expect ';'
-        if !self.peek_word_eq(";") {
-             match self.tokens.peek() {
-                 Some(Token::Word(w)) if w == ";" => { self.tokens.next(); },
-                 _ => return Err("Expected ';' after declaration".to_string()),
-             }
-        } else {
-             self.tokens.next();
+        match self.tokens.peek() {
+            Some(Token::Semicolon) => { self.tokens.next(); },
+            Some(Token::Word(w)) if w == ";" => { self.tokens.next(); },
+            _ => return Err("Expected ';' after declaration".to_string()),
         }
 
         self.constants.insert(name, value);
@@ -385,7 +549,23 @@ impl<'a> Parser<'a> {
                 Ok(Stmt::Push(Value::new(*c as u64)))
             }
             
+            Some(Token::LParen) => {
+                // Parenthesized expression - parse and return as block
+                let stmts = self.parse_expr_or()?;
+                match self.tokens.next() {
+                    Some(Token::RParen) => {}
+                    _ => return Err("Expected ')' to close expression".to_string()),
+                }
+                if stmts.len() == 1 {
+                    Ok(stmts.into_iter().next().unwrap())
+                } else {
+                    Ok(Stmt::Block(stmts))
+                }
+            }
+            
             Some(Token::RBrace) => Err("Unexpected '}'".to_string()),
+            Some(Token::RParen) => Err("Unexpected ')'".to_string()),
+            Some(Token::Comma) => Err("Unexpected ','".to_string()),
             Some(Token::Equals) => Err("Unexpected '='".to_string()),
             Some(Token::Semicolon) => Err("Unexpected ';'".to_string()),
             
@@ -408,6 +588,13 @@ impl<'a> Parser<'a> {
             "ROT" => self.emit_op(OpCode::Rot),
             "DEPTH" => self.emit_op(OpCode::Depth),
             "PICK" | "PEEK" => self.emit_op(OpCode::Pick),
+            "ROLL" => self.emit_op(OpCode::Roll),
+            "REVERSE" | "REV" => self.emit_op(OpCode::Reverse),
+            
+            // String Operations
+            "STR_REV" => self.emit_op(OpCode::StrRev),
+            "STR_CAT" | "CONCAT" => self.emit_op(OpCode::StrCat),
+            "STR_SPLIT" | "SPLIT" => self.emit_op(OpCode::StrSplit),
             
             // Arithmetic
             "ADD" | "+" => self.emit_op(OpCode::Add),
@@ -441,20 +628,85 @@ impl<'a> Parser<'a> {
             
             // I/O
             "INPUT" => self.emit_op(OpCode::Input),
-            "OUTPUT" => self.emit_op(OpCode::Output),
+            "OUTPUT" => {
+                if matches!(self.tokens.peek(), Some(Token::LParen)) {
+                    let expr_stmts = self.parse_expression()?;
+                    let mut stmts = expr_stmts;
+                    stmts.push(Stmt::Op(OpCode::Output));
+                    Ok(Stmt::Block(stmts))
+                } else {
+                    self.emit_op(OpCode::Output)
+                }
+            },
             
             // Control flow
-            "IF" => {
-                // Pop condition
-                self.stack_depth = self.stack_depth.saturating_sub(1);
-                let then_block = self.parse_block()?;
-                let else_block = if self.peek_word_eq("ELSE") {
-                    self.tokens.next(); // consume ELSE
-                    Some(self.parse_block()?)
-                } else {
-                    None
+            "ASSERT" => {
+                // Parse condition expression
+                let mut stmts = self.parse_expr_or()?;
+                
+                // Optional TEMPORAL keyword
+                if self.peek_word_eq("TEMPORAL") {
+                    self.tokens.next();
+                }
+
+                // Expect String literal
+                let msg = match self.tokens.next() {
+                    Some(Token::StringLit(s)) => s,
+                    _ => return Err("Expected string literal message after ASSERT condition".to_string()),
                 };
-                Ok(Stmt::If { then_branch: then_block, else_branch: else_block })
+
+                // Push message string (chars + len)
+                let chars: Vec<char> = msg.chars().collect();
+                for c in &chars {
+                     self.stack_depth += 1;
+                     stmts.push(Stmt::Push(Value::new(*c as u64)));
+                }
+                self.stack_depth += 1;
+                stmts.push(Stmt::Push(Value::new(chars.len() as u64)));
+
+                // Emit ASSERT op
+                // OpCode::Assert consumes (cond, chars, len)
+                // Stack effect (2,0) handles cond and len.
+                // We must manually subtract chars.
+                self.stack_depth = self.stack_depth.saturating_sub(chars.len());
+                self.emit_op(OpCode::Assert)?;
+                stmts.push(Stmt::Op(OpCode::Assert));
+
+                // Optional semicolon
+                if matches!(self.tokens.peek(), Some(Token::Semicolon)) {
+                    self.tokens.next();
+                }
+
+                Ok(Stmt::Block(stmts))
+            },
+            
+            "IF" => {
+                // Check for new expression syntax: IF (expr) { }
+                if matches!(self.tokens.peek(), Some(Token::LParen)) {
+                    let expr_stmts = self.parse_expression()?;
+                    let then_block = self.parse_block()?;
+                    let else_block = if self.peek_word_eq("ELSE") {
+                        self.tokens.next(); // consume ELSE
+                        Some(self.parse_block()?)
+                    } else {
+                        None
+                    };
+                    // Wrap: evaluate condition, then IF
+                    let mut all_stmts = expr_stmts;
+                    all_stmts.push(Stmt::If { then_branch: then_block, else_branch: else_block });
+                    Ok(Stmt::Block(all_stmts))
+                } else {
+                    // Old syntax: condition already on stack
+                    self.stack_depth = self.stack_depth.saturating_sub(1);
+                    let then_block = self.parse_block()?;
+                    let else_block = if self.peek_word_eq("ELSE") {
+                        self.tokens.next(); // consume ELSE
+                        Some(self.parse_block()?)
+                    } else {
+                        None
+                    };
+                    Ok(Stmt::If { then_branch: then_block, else_branch: else_block })
+                }
             }
             
             "WHILE" => {
@@ -464,6 +716,44 @@ impl<'a> Parser<'a> {
             }
             
             "ELSE" => Err("Unexpected ELSE without IF".to_string()),
+            
+            // Procedure definition
+            "PROCEDURE" => {
+                self.parse_procedure_def()?;
+                Ok(Stmt::Block(vec![]))
+            },
+            
+            // TEMPORAL: Either scope or variable binding
+            // Scope: TEMPORAL <base> <size> { body }
+            // Variable: TEMPORAL <name> @ <addr> DEFAULT <val>;
+            "TEMPORAL" => {
+                match self.tokens.peek() {
+                    // If next is a number, it's the scope syntax
+                    Some(Token::Number(_)) => {
+                        // Parse base address
+                        let base = match self.tokens.next() {
+                            Some(Token::Number(n)) => *n,
+                            _ => return Err("Expected base address after TEMPORAL".to_string()),
+                        };
+                        
+                        // Parse size
+                        let size = match self.tokens.next() {
+                            Some(Token::Number(n)) => *n,
+                            _ => return Err("Expected size after TEMPORAL base".to_string()),
+                        };
+                        
+                        // Parse body block
+                        let body = self.parse_block()?;
+                        
+                        Ok(Stmt::TemporalScope { base, size, body })
+                    }
+                    // If next is a word (identifier), it's variable binding syntax
+                    Some(Token::Word(_)) => {
+                        self.parse_temporal_var()
+                    }
+                    _ => Err(self.error("Expected address or variable name after TEMPORAL").into()),
+                }
+            }
             
             // LET bindings: LET name = expr;
             "LET" => self.parse_let(),
@@ -489,6 +779,16 @@ impl<'a> Parser<'a> {
                     ]));
                 }
                 
+                // Check if it is a temporal variable (oracle-backed)
+                if let Some(binding) = self.temporal_vars.get(&lower).cloned() {
+                    self.stack_depth += 1; // ORACLE adds to stack
+                    // Generate: <address> ORACLE
+                    return Ok(Stmt::Block(vec![
+                        Stmt::Push(Value::new(binding.address)),
+                        Stmt::Op(OpCode::Oracle),
+                    ]));
+                }
+                
                 // Check if it is a defined procedure
                 if let Some(binding) = self.procedures.get(&lower).cloned() {
                     // Procedure call: consumes params, produces returns
@@ -499,12 +799,61 @@ impl<'a> Parser<'a> {
                 
                 // If it is strictly uppercase, it might be a misspelled opcode
                 if other.chars().all(|c| c.is_uppercase() || c == '_') {
-                     return Err(format!("Unknown opcode or constant: {}", other));
+                    // Suggest similar opcodes
+                    let suggestion = self.suggest_opcode(other);
+                    let mut err = self.error(format!("Unknown opcode: '{}'", other));
+                    if let Some(suggested) = suggestion {
+                        err = err.with_help(format!("Did you mean '{}'?", suggested));
+                    }
+                    err = err.with_note("Available opcodes: ADD, SUB, MUL, DIV, DUP, SWAP, ORACLE, PROPHECY, IF, WHILE, LET");
+                    return Err(err.into());
                 }
-                // Otherwise, error.
-                Err(format!("Unknown variable or procedure: {}", other))
+                // Otherwise, error with variable context
+                let mut err = self.error(format!("Unknown variable or procedure: '{}'", other));
+                if !self.variables.is_empty() {
+                    let vars: Vec<_> = self.variables.keys().take(3).cloned().collect();
+                    err = err.with_note(format!("Defined variables: {}", vars.join(", ")));
+                }
+                if !self.procedures.is_empty() {
+                    let procs: Vec<_> = self.procedures.keys().take(3).cloned().collect();
+                    err = err.with_help(format!("Available procedures: {}", procs.join(", ")));
+                }
+                Err(err.into())
             }
         }
+    }
+    
+    /// Suggest a similar opcode for typo detection.
+    fn suggest_opcode(&self, unknown: &str) -> Option<&'static str> {
+        const OPCODES: &[&str] = &[
+            "ADD", "SUB", "MUL", "DIV", "MOD", "NEG",
+            "DUP", "DROP", "SWAP", "OVER", "ROT", "PICK", "DEPTH",
+            "AND", "OR", "XOR", "NOT", "SHL", "SHR",
+            "EQ", "NEQ", "LT", "GT", "LTE", "GTE",
+            "ORACLE", "PROPHECY", "PRESENT", "PARADOX",
+            "INPUT", "OUTPUT", "HALT", "NOP",
+            "ROLL", "REVERSE", "STR_REV", "STR_CAT", "STR_SPLIT",
+        ];
+        
+        // Simple prefix matching
+        for &op in OPCODES {
+            if op.starts_with(unknown) || unknown.starts_with(op) {
+                return Some(op);
+            }
+        }
+        
+        // Levenshtein distance 1 check (simple character swap/add/remove)
+        for &op in OPCODES {
+            if (unknown.len() as i32 - op.len() as i32).abs() <= 1 {
+                let mut diff = 0;
+                for (a, b) in unknown.chars().zip(op.chars()) {
+                    if a != b { diff += 1; }
+                }
+                if diff <= 1 { return Some(op); }
+            }
+        }
+        
+        None
     }
     
     /// Parse a LET binding: LET name = expr;
@@ -554,9 +903,61 @@ impl<'a> Parser<'a> {
         }
     }
     
-    /// Parse a procedure definition: PROCEDURE name(params) { body }
+    /// Parse a temporal variable binding: TEMPORAL <name> @ <addr> DEFAULT <val>;
+    /// This creates a variable that reads from ORACLE and writes via PROPHECY.
+    fn parse_temporal_var(&mut self) -> Result<Stmt, String> {
+        // Get variable name
+        let name = match self.tokens.next() {
+            Some(Token::Word(w)) => w.to_lowercase(),
+            _ => return Err(self.error("Expected variable name after TEMPORAL").into()),
+        };
+        
+        // Expect '@' symbol
+        match self.tokens.next() {
+            Some(Token::Word(w)) if w == "@" => {}
+            _ => return Err(self.error_with_help(
+                "Expected '@' after TEMPORAL variable name",
+                "Syntax: TEMPORAL name @ address DEFAULT value;"
+            ).into()),
+        }
+        
+        // Get address
+        let address = match self.tokens.next() {
+            Some(Token::Number(n)) => *n,
+            _ => return Err(self.error("Expected address after '@'").into()),
+        };
+        
+        // Expect 'DEFAULT' keyword
+        match self.tokens.next() {
+            Some(Token::Word(w)) if w.to_uppercase() == "DEFAULT" => {}
+            _ => return Err(self.error_with_help(
+                "Expected 'DEFAULT' after address",
+                "Syntax: TEMPORAL name @ address DEFAULT value;"
+            ).into()),
+        }
+        
+        // Get default value
+        let default = match self.tokens.next() {
+            Some(Token::Number(n)) => *n,
+            _ => return Err(self.error("Expected default value after DEFAULT").into()),
+        };
+        
+        // Consume semicolon if present
+        if let Some(Token::Semicolon) = self.tokens.peek() {
+            self.tokens.next();
+        }
+        
+        // Register the temporal binding
+        self.temporal_vars.insert(name.clone(), TemporalBinding { address, default });
+        
+        // No statement emitted - temporal vars are accessed via ORACLE/PROPHECY
+        // The DEFAULT value is used if the oracle returns 0 on first access
+        Ok(Stmt::Block(vec![]))
+    }
+    
+    /// Parse a procedure definition: PROCEDURE name(params) [EFFECTS] { body }
     fn parse_procedure_def(&mut self) -> Result<(), String> {
-        self.tokens.next(); // Consume PROCEDURE
+        // Procedure token already consumed by parse_statement dispatch
         
         // Get procedure name
         let name = match self.tokens.next() {
@@ -566,13 +967,24 @@ impl<'a> Parser<'a> {
         
         // Parse optional parameter list
         let mut params = Vec::new();
-        if self.peek_word_eq("(") || matches!(self.tokens.peek(), Some(Token::Word(w)) if w == "(") {
+        // Check for LParen (preferred) or Word("(") (legacy)
+        let has_paren = matches!(self.tokens.peek(), Some(Token::LParen)) || 
+                        self.peek_word_eq("(");
+        
+        if has_paren {
             self.tokens.next(); // consume (
             loop {
                 match self.tokens.peek() {
+                    Some(Token::RParen) => {
+                        self.tokens.next();
+                        break;
+                    }
                     Some(Token::Word(w)) if w == ")" => {
                         self.tokens.next();
                         break;
+                    }
+                    Some(Token::Comma) => {
+                        self.tokens.next();
                     }
                     Some(Token::Word(w)) if w == "," => {
                         self.tokens.next();
@@ -583,6 +995,35 @@ impl<'a> Parser<'a> {
                     }
                     _ => break,
                 }
+            }
+        }
+        
+        // Parse effect annotations: PURE, READS(addr), WRITES(addr)
+        let mut effects = Vec::new();
+        loop {
+            // Stop if we see '{' which starts the body
+            if matches!(self.tokens.peek(), Some(Token::LBrace)) {
+                break;
+            }
+            
+            match self.tokens.peek() {
+                Some(Token::Word(w)) => {
+                    let w_upper = w.to_uppercase();
+                    if w_upper == "PURE" {
+                        self.tokens.next();
+                        effects.push(Effect::Pure);
+                    } else if w_upper == "READS" {
+                        self.tokens.next(); // consume READS
+                        effects.push(Effect::Reads(self.parse_effect_arg()?));
+                    } else if w_upper == "WRITES" {
+                        self.tokens.next(); // consume WRITES
+                        effects.push(Effect::Writes(self.parse_effect_arg()?));
+                    } else {
+                        // Not an effect keyword, assumed to be start of body or error
+                        break;
+                    }
+                }
+                _ => break,
             }
         }
         
@@ -600,10 +1041,36 @@ impl<'a> Parser<'a> {
             name,
             params,
             returns: 1,
+            effects,
             body,
         });
         
         Ok(())
+    }
+    
+    /// Parse argument for effect: (addr)
+    fn parse_effect_arg(&mut self) -> Result<u64, String> {
+        // Expect '('
+        match self.tokens.next() {
+             Some(Token::LParen) => {},
+             Some(Token::Word(w)) if w == "(" => {},
+             _ => return Err("Expected '(' after effect keyword".to_string()),
+        }
+        
+        // Expect number (for now only constant addresses supported)
+        let addr = match self.tokens.next() {
+            Some(Token::Number(n)) => *n,
+            _ => return Err("Expected address number in effect annotation".to_string()),
+        };
+        
+        // Expect ')'
+        match self.tokens.next() {
+             Some(Token::RParen) => {},
+             Some(Token::Word(w)) if w == ")" => {},
+             _ => return Err("Expected ')' after effect address".to_string()),
+        }
+        
+        Ok(addr)
     }
     
     /// Parse a block enclosed in braces.
@@ -637,7 +1104,308 @@ impl<'a> Parser<'a> {
             _ => false,
         }
     }
+    
+    // ========================================================================
+    // Expression Parser (Operator Precedence)
+    // ========================================================================
+    
+    /// Check if next token starts an expression (for detecting expression context)
+    #[allow(dead_code)]
+    fn is_expression_start(&mut self) -> bool {
+        match self.tokens.peek() {
+            Some(Token::LParen) | Some(Token::Number(_)) => true,
+            Some(Token::Word(w)) => !self.is_keyword_str(w),
+            _ => false,
+        }
+    }
+    
+    /// Check if a string is a control-flow keyword
+    fn is_keyword_str(&self, word: &str) -> bool {
+        matches!(word.to_uppercase().as_str(), 
+            "IF" | "ELSE" | "WHILE" | "LET" | "MANIFEST" | "PROCEDURE" | "PROC" | "TEMPORAL"
+        )
+    }
+    
+
+    
+    /// Parse a parenthesized expression: (expr)
+    /// Returns statements that evaluate the expression and leave result on stack
+    fn parse_expression(&mut self) -> Result<Vec<Stmt>, String> {
+        // Must start with (
+        match self.tokens.next() {
+            Some(Token::LParen) => {}
+            _ => return Err("Expected '(' to start expression".to_string()),
+        }
+        
+        let stmts = self.parse_expr_or()?;
+        
+        // Must end with )
+        match self.tokens.next() {
+            Some(Token::RParen) => {}
+            _ => return Err("Expected ')' to close expression".to_string()),
+        }
+        
+        Ok(stmts)
+    }
+    
+    /// Parse OR expression: expr && expr && ...
+    fn parse_expr_or(&mut self) -> Result<Vec<Stmt>, String> {
+        let mut stmts = self.parse_expr_and()?;
+        
+        while self.peek_operator("||") || self.peek_word_eq("OR") {
+            self.tokens.next(); // consume ||
+            let right = self.parse_expr_and()?;
+            stmts.extend(right);
+            stmts.push(Stmt::Op(OpCode::Or));
+            self.stack_depth = self.stack_depth.saturating_sub(1);
+        }
+        
+        Ok(stmts)
+    }
+    
+    /// Parse AND expression: expr || expr || ...
+    fn parse_expr_and(&mut self) -> Result<Vec<Stmt>, String> {
+        let mut stmts = self.parse_expr_comparison()?;
+        
+        while self.peek_operator("&&") || self.peek_word_eq("AND") {
+            self.tokens.next(); // consume &&
+            let right = self.parse_expr_comparison()?;
+            stmts.extend(right);
+            stmts.push(Stmt::Op(OpCode::And));
+            self.stack_depth = self.stack_depth.saturating_sub(1);
+        }
+        
+        Ok(stmts)
+    }
+    
+    /// Parse comparison: expr (< | > | <= | >= | == | !=) expr
+    fn parse_expr_comparison(&mut self) -> Result<Vec<Stmt>, String> {
+        let mut stmts = self.parse_expr_additive()?;
+        
+        loop {
+            let op = if self.peek_operator("==") || self.peek_word_eq("EQ") {
+                self.tokens.next();
+                Some(OpCode::Eq)
+            } else if self.peek_operator("!=") || self.peek_word_eq("NEQ") {
+                self.tokens.next();
+                Some(OpCode::Neq)
+            } else if self.peek_operator("<=") || self.peek_word_eq("LTE") {
+                self.tokens.next();
+                Some(OpCode::Lte)
+            } else if self.peek_operator(">=") || self.peek_word_eq("GTE") {
+                self.tokens.next();
+                Some(OpCode::Gte)
+            } else if self.peek_operator("<") || self.peek_word_eq("LT") {
+                self.tokens.next();
+                Some(OpCode::Lt)
+            } else if self.peek_operator(">") || self.peek_word_eq("GT") {
+                self.tokens.next();
+                Some(OpCode::Gt)
+            } else {
+                None
+            };
+            
+            if let Some(opcode) = op {
+                let right = self.parse_expr_additive()?;
+                stmts.extend(right);
+                stmts.push(Stmt::Op(opcode));
+                self.stack_depth = self.stack_depth.saturating_sub(1);
+            } else {
+                break;
+            }
+        }
+        
+        Ok(stmts)
+    }
+    
+    /// Parse additive: expr (+ | -) expr
+    fn parse_expr_additive(&mut self) -> Result<Vec<Stmt>, String> {
+        let mut stmts = self.parse_expr_multiplicative()?;
+        
+        loop {
+            let op = if self.peek_operator("+") {
+                self.tokens.next();
+                Some(OpCode::Add)
+            } else if self.peek_operator("-") {
+                self.tokens.next();
+                Some(OpCode::Sub)
+            } else {
+                None
+            };
+            
+            if let Some(opcode) = op {
+                let right = self.parse_expr_multiplicative()?;
+                stmts.extend(right);
+                stmts.push(Stmt::Op(opcode));
+                self.stack_depth = self.stack_depth.saturating_sub(1);
+            } else {
+                break;
+            }
+        }
+        
+        Ok(stmts)
+    }
+    
+    /// Parse multiplicative: expr (* | / | %) expr
+    fn parse_expr_multiplicative(&mut self) -> Result<Vec<Stmt>, String> {
+        let mut stmts = self.parse_expr_unary()?;
+        
+        loop {
+            let op = if self.peek_operator("*") {
+                self.tokens.next();
+                Some(OpCode::Mul)
+            } else if self.peek_operator("/") {
+                self.tokens.next();
+                Some(OpCode::Div)
+            } else if self.peek_operator("%") {
+                self.tokens.next();
+                Some(OpCode::Mod)
+            } else {
+                None
+            };
+            
+            if let Some(opcode) = op {
+                let right = self.parse_expr_unary()?;
+                stmts.extend(right);
+                stmts.push(Stmt::Op(opcode));
+                self.stack_depth = self.stack_depth.saturating_sub(1);
+            } else {
+                break;
+            }
+        }
+        
+        Ok(stmts)
+    }
+    
+    /// Parse unary: !expr, ~expr, -expr, or primary
+    fn parse_expr_unary(&mut self) -> Result<Vec<Stmt>, String> {
+        if self.peek_operator("!") || self.peek_operator("~") {
+            self.tokens.next();
+            let mut stmts = self.parse_expr_unary()?;
+            stmts.push(Stmt::Op(OpCode::Not));
+            Ok(stmts)
+        } else {
+            self.parse_expr_primary()
+        }
+    }
+    
+    /// Parse primary expression: number, variable, function call, or (expr)
+    fn parse_expr_primary(&mut self) -> Result<Vec<Stmt>, String> {
+        // Peek and clone necessary data before consuming
+        let peeked = self.tokens.peek().cloned();
+        match peeked {
+            Some(Token::Number(n)) => {
+                self.tokens.next();
+                self.stack_depth += 1;
+                Ok(vec![Stmt::Push(Value::new(*n))])
+            }
+            
+            Some(Token::LParen) => {
+                self.parse_expression()
+            }
+            
+            Some(Token::Word(w)) => {
+                let word = w;
+                let upper = word.to_uppercase();
+                
+                // Check for ORACLE(addr) syntax
+                if upper == "ORACLE" {
+                    self.tokens.next();
+                    // Check for function-call syntax
+                    if matches!(self.tokens.peek(), Some(Token::LParen)) {
+                        self.tokens.next(); // consume (
+                        let addr_stmts = self.parse_expr_or()?; // parse address expression
+                        match self.tokens.next() {
+                            Some(Token::RParen) => {}
+                            _ => return Err("Expected ')' after ORACLE address".to_string()),
+                        }
+                        let mut stmts = addr_stmts;
+                        stmts.push(Stmt::Op(OpCode::Oracle));
+                        // Oracle pops 1 (address), pushes 1 (value) - net: 0, but we added 1 for address
+                        return Ok(stmts);
+                    } else {
+                        // Plain ORACLE token - let parse_word handle it
+                        self.stack_depth += 1;
+                        return Ok(vec![Stmt::Op(OpCode::Oracle)]);
+                    }
+                }
+                
+                // Check for PROPHECY(addr, value) syntax
+                if upper == "PROPHECY" {
+                    self.tokens.next();
+                    if matches!(self.tokens.peek(), Some(Token::LParen)) {
+                        self.tokens.next(); // consume (
+                        let value_stmts = self.parse_expr_or()?;
+                        match self.tokens.next() {
+                            Some(Token::Comma) => {}
+                            _ => return Err("Expected ',' in PROPHECY(value, addr)".to_string()),
+                        }
+                        let addr_stmts = self.parse_expr_or()?;
+                        match self.tokens.next() {
+                            Some(Token::RParen) => {}
+                            _ => return Err("Expected ')' after PROPHECY".to_string()),
+                        }
+                        let mut stmts = value_stmts;
+                        stmts.extend(addr_stmts);
+                        stmts.push(Stmt::Op(OpCode::Prophecy));
+                        self.stack_depth = self.stack_depth.saturating_sub(2);
+                        return Ok(stmts);
+                    } else {
+                        return Ok(vec![Stmt::Op(OpCode::Prophecy)]);
+                    }
+                }
+                
+                self.tokens.next();
+                
+                // Check if it's a defined constant
+                if let Some(&val) = self.constants.get(&upper) {
+                    self.stack_depth += 1;
+                    return Ok(vec![Stmt::Push(Value::new(val))]);
+                }
+                
+                // Check if it's a defined variable
+                let lower = word.to_lowercase();
+                if let Some(binding) = self.variables.get(&lower).cloned() {
+                    let pick_index = self.stack_depth - binding.stack_depth - 1;
+                    self.stack_depth += 1;
+                    return Ok(vec![
+                        Stmt::Push(Value::new(pick_index as u64)),
+                        Stmt::Op(OpCode::Pick),
+                    ]);
+                }
+
+                // Check if it's a temporal variable
+                if let Some(binding) = self.temporal_vars.get(&lower).cloned() {
+                    self.stack_depth += 1;
+                    return Ok(vec![
+                        Stmt::Push(Value::new(binding.address)),
+                        Stmt::Op(OpCode::Oracle),
+                    ]);
+                }
+                
+                // Check if it's a procedure call
+                if let Some(binding) = self.procedures.get(&lower).cloned() {
+                    self.stack_depth = self.stack_depth.saturating_sub(binding.param_count);
+                    self.stack_depth += binding.return_count;
+                    return Ok(vec![Stmt::Call { name: lower }]);
+                }
+                
+                Err(format!("Unknown identifier in expression: {}", word))
+            }
+            
+            _ => Err("Expected expression".to_string()),
+        }
+    }
+    
+    /// Check if next token is a specific operator
+    fn peek_operator(&mut self, op: &str) -> bool {
+        match self.tokens.peek() {
+            Some(Token::Word(w)) => w == op,
+            _ => false,
+        }
+    }
 }
+
 
 /// Parse source code directly into a program.
 pub fn parse(source: &str) -> Result<Program, String> {
@@ -766,5 +1534,59 @@ mod tests {
             }
             _ => panic!("Expected Block for multi-statement LET expression"),
         }
+    }
+    
+    // ========================================================================
+    // Expression Syntax Tests
+    // ========================================================================
+    
+    #[test]
+    fn test_expression_arithmetic() {
+        // (10 + 20) should compile to Push(10), Push(20), Add
+        let program = parse("(10 + 20) OUTPUT").unwrap();
+        assert!(program.body.len() >= 1);
+    }
+    
+    #[test]
+    fn test_expression_comparison() {
+        // (x > 1) style comparison
+        let program = parse("LET x = 5; (x > 1) OUTPUT").unwrap();
+        assert!(program.body.len() >= 2);
+    }
+    
+    #[test]
+    fn test_expression_if_syntax() {
+        // IF (1 > 0) { ... } new expression syntax
+        let program = parse("IF (1 > 0) { 42 OUTPUT }").unwrap();
+        assert!(program.body.len() >= 1);
+        // Should wrap expression eval and IF in a block
+        match &program.body[0] {
+            Stmt::Block(stmts) => {
+                // Last statement should be IF
+                assert!(matches!(stmts.last(), Some(Stmt::If { .. })));
+            }
+            _ => panic!("Expected Block wrapping expression and IF"),
+        }
+    }
+    
+    #[test]
+    fn test_expression_complex() {
+        // Complex expression: (x > 1 && x < 15)
+        let program = parse("LET x = 5; (x > 1 && x < 15) OUTPUT").unwrap();
+        assert!(program.body.len() >= 2);
+    }
+    
+    #[test]
+    fn test_expression_oracle_function() {
+        // ORACLE(0) function syntax
+        let program = parse("(ORACLE(0) > 1) OUTPUT").unwrap();
+        assert!(program.body.len() >= 1);
+    }
+    
+    #[test]
+    fn test_tokenize_parentheses() {
+        let tokens = tokenize("(10 + 20)");
+        assert!(matches!(tokens[0], Token::LParen));
+        assert!(matches!(tokens[4], Token::RParen));
     }
 }

@@ -298,6 +298,12 @@ impl TypeChecker {
                     }
                 }
             }
+            
+            Stmt::TemporalScope { body, .. } => {
+                // Temporal scope: check the body
+                // Memory isolation doesn't affect type checking at this level
+                self.check_statements(body);
+            }
         }
     }
     
@@ -463,6 +469,12 @@ impl TypeChecker {
                 self.pop_type(); // index
                 self.pop_type(); // base
                 self.pop_type(); // value
+            }
+
+            // Dynamic stack structure changes cannot be statically typed easily
+            OpCode::Roll | OpCode::Reverse | OpCode::StrRev | OpCode::StrCat | OpCode::StrSplit | OpCode::Assert => {
+                // Conservative approach: do nothing or invalidate stack?
+                // For this prototype, we ignore their effect on type stack structure
             }
         }
     }

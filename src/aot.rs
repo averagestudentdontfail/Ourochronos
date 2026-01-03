@@ -146,8 +146,29 @@ impl AotCompiler {
         self.module.clear_context(&mut ctx);
         self.stats.functions_compiled += 1;
         
-        // Emit object file
-        let product = self.module.finish();
+        // Emit object file - need to recreate module since finish() consumes it
+        // Create a fresh module to replace the old one
+        let mut flag_builder = settings::builder();
+        flag_builder.set("opt_level", "speed").unwrap();
+        flag_builder.set("is_pic", "true").unwrap();
+        
+        let isa_builder = cranelift_native::builder()
+            .map_err(|e| JitError::Compilation(format!("ISA error: {}", e)))?;
+        
+        let isa = isa_builder
+            .finish(settings::Flags::new(flag_builder))
+            .map_err(|e| JitError::Compilation(format!("ISA finish: {}", e)))?;
+        
+        let builder = ObjectBuilder::new(
+            isa,
+            "ourochronos_program",
+            cranelift_module::default_libcall_names(),
+        ).map_err(|e| JitError::Compilation(format!("ObjectBuilder: {}", e)))?;
+        
+        let new_module = ObjectModule::new(builder);
+        let old_module = std::mem::replace(&mut self.module, new_module);
+        
+        let product = old_module.finish();
         let bytes = product.emit()
             .map_err(|e| JitError::Compilation(format!("Emit: {}", e)))?;
         

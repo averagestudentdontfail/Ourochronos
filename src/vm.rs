@@ -252,6 +252,43 @@ impl Executor {
                 }
                 Ok(())
             }
+            
+            Stmt::TemporalScope { base, size, body } => {
+                // Temporal scoping: create an isolated memory region
+                // 
+                // 1. Snapshot the memory region [base, base+size)
+                // 2. Execute body with Oracle/Prophecy relative to base
+                // 3. On success, propagate changes to parent
+                // 4. On paradox/error, discard changes
+                
+                let base_addr = *base as u16;
+                let region_size = *size as u16;
+                
+                // Snapshot the affected region
+                let mut snapshot: Vec<Value> = Vec::with_capacity(region_size as usize);
+                for i in 0..region_size {
+                    snapshot.push(state.anamnesis.read(base_addr.wrapping_add(i)));
+                }
+                
+                // Execute the body
+                let result = self.execute_block(body, state);
+                
+                match result {
+                    Ok(()) => {
+                        // Success - changes are propagated (already written to state.present)
+                        Ok(())
+                    }
+                    Err(e) if e.contains("paradox") || e.contains("PARADOX") => {
+                        // Paradox - restore snapshotted region
+                        for (i, val) in snapshot.into_iter().enumerate() {
+                            state.present.write(base_addr.wrapping_add(i as u16), val);
+                        }
+                        // Propagate the error
+                        Err(e)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
         }
     }
     
@@ -287,6 +324,144 @@ impl Executor {
                 let val = state.stack[idx].clone();
                 state.stack.push(val);
             }
+            OpCode::Roll => {
+                let n_val = self.pop(state)?;
+                let n = n_val.val;
+                let len = state.stack.len() as u64;
+                if n >= len {
+                     return Err(format!("Roll out of bounds: index {} but depth {}", n, len));
+                }
+                let idx = (len - 1 - n) as usize;
+                let val = state.stack.remove(idx);
+                state.stack.push(val);
+            }
+            OpCode::Reverse => {
+                let n_val = self.pop(state)?;
+                let count = n_val.val as usize;
+                let len = state.stack.len();
+                if count > len {
+                    return Err(format!("Reverse out of bounds: count {} but depth {}", count, len));
+                }
+                if count > 1 {
+                    let start = len - count;
+                    state.stack[start..].reverse();
+                }
+            }
+            
+            OpCode::StrRev => {
+                let len_val = self.pop(state)?;
+                let len = len_val.val as usize;
+                if len > state.stack.len() {
+                    return Err("StrRev: length exceeds stack depth".to_string());
+                }
+                if len > 0 {
+                    let start = state.stack.len() - len;
+                    state.stack[start..].reverse();
+                }
+                state.stack.push(len_val);
+            }
+            
+            OpCode::Assert => {
+                let len_val = self.pop(state)?;
+                let len = len_val.val as usize;
+                
+                let mut chars: Vec<u8> = Vec::with_capacity(len);
+                for _ in 0..len {
+                    let val = self.pop(state)?;
+                    chars.push(val.val as u8);
+                }
+                chars.reverse(); // Stack order is reverse of string order? 
+                // Wait, parser pushes char 0, then char 1... then len.
+                // So top of stack is len, then char N, ..., char 0.
+                // popping gives char N, ..., char 0.
+                // So we need to reverse to get 0..N. 
+                // Actually parse logic: 
+                // "ABC" -> Push 'A', Push 'B', Push 'C', Push 3.
+                // Stack: [..., A, B, C, 3] (Top is right)
+                // Pop 3. Stack: [..., A, B, C]
+                // Pop C, Pop B, Pop A.
+                // Result C, B, A. Reverse -> A, B, C. Correct.
+                
+                let cond_val = self.pop(state)?;
+                if cond_val.val == 0 {
+                    let msg = String::from_utf8_lossy(&chars);
+                    return Err(format!("Assertion failed: {}", msg));
+                }
+            }
+            
+            OpCode::StrCat => {
+                let len2_val = self.pop(state)?;
+                let len2 = len2_val.val as usize;
+                
+                // Pop string 2 chars
+                let mut s2: Vec<Value> = Vec::with_capacity(len2);
+                for _ in 0..len2 {
+                    s2.push(self.pop(state)?);
+                }
+                s2.reverse(); // Popped in reverse order
+                
+                // Pop len1
+                let len1_val = self.pop(state)?;
+                let len1 = len1_val.val as usize;
+                
+                // s1 is already on stack. Just verify depth.
+                if len1 > state.stack.len() {
+                    return Err("StrCat: string 1 length exceeds stack depth".to_string());
+                }
+                
+                // Push s2 back
+                for v in s2 {
+                    state.stack.push(v);
+                }
+                
+                // Push total length
+                state.stack.push(Value {
+                    val: (len1 + len2) as u64,
+                    prov: len1_val.prov.merge(&len2_val.prov),
+                });
+            }
+            
+            OpCode::StrSplit => {
+                let delim_val = self.pop(state)?;
+                let delim = delim_val.val;
+                
+                let len_val = self.pop(state)?;
+                let len = len_val.val as usize;
+                
+                // Pop string chars
+                let mut chars: Vec<Value> = Vec::with_capacity(len);
+                for _ in 0..len {
+                    chars.push(self.pop(state)?);
+                }
+                chars.reverse();
+                
+                // Split logic
+                let mut parts: Vec<Vec<Value>> = Vec::new();
+                let mut current: Vec<Value> = Vec::new();
+                
+                for c in chars {
+                    if c.val == delim {
+                        parts.push(current);
+                        current = Vec::new();
+                    } else {
+                        current.push(c);
+                    }
+                }
+                parts.push(current); // Last part
+                
+                // Push parts back to stack
+                let count = parts.len();
+                for part in parts {
+                    let part_len = part.len() as u64;
+                    for c in part {
+                         state.stack.push(c);
+                    }
+                    state.stack.push(Value::new(part_len));
+                }
+                
+                state.stack.push(Value::new(count as u64));
+            }
+
             OpCode::Swap => {
                 let a = self.pop(state)?;
                 let b = self.pop(state)?;

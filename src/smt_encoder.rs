@@ -134,6 +134,12 @@ impl SmtEncoder {
                 // Pattern matching requires complex ITE chains
                 // For now, skip - would need full stack simulation
             }
+            
+            Stmt::TemporalScope { body, .. } => {
+                // Temporal scoping: encode body, but note isolation semantics
+                // are not fully expressible in SMT without memory regions
+                self.encode_block(body, stack, present, depth);
+            }
         }
     }
     
@@ -366,7 +372,12 @@ impl SmtEncoder {
             // Array opcodes - not fully supported in SMT encoding
             OpCode::Pack | OpCode::Unpack | OpCode::Index | OpCode::Store => {
                 // Array operations require complex memory theory
-                // For now, we skip them in SMT encoding
+                // Dynamic stack structure changes cannot be statically typed easily
+            }
+
+            OpCode::Roll | OpCode::Reverse | OpCode::StrRev | OpCode::StrCat | OpCode::StrSplit | OpCode::Assert => {
+                // Conservative approach: do nothing or invalidate stack?
+                // For this prototype, we ignore their effect on type stack structure
             }
         }
     }

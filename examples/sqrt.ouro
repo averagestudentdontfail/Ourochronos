@@ -1,0 +1,22 @@
+# examples/sqrt.ouro
+# Integer Square Root using Newton's Method and Temporal Feedback
+# Formula: x_{n+1} = (x_n + N/x_n) / 2
+
+# Define target constant
+MANIFEST TARGET = 144;
+
+TEMPORAL guess @ 0 DEFAULT 100; # Initial guess
+
+PROCEDURE step() PURE {
+    # Calculate next guess: (guess + TARGET/guess) / 2
+    guess TARGET guess DIV ADD 2 DIV
+}
+
+# Output current guess
+guess OUTPUT
+
+# Calculate new guess
+step 
+
+# Update temporal state (Prophecy)
+0 PROPHECY

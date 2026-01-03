@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Token"],"fn":["parse","tokenize"],"struct":["ParseError","Parser","Span","SpannedToken"]};

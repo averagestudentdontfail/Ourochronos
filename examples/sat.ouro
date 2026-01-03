@@ -1,0 +1,17 @@
+# examples/sat.ouro
+# Boolean Satisfiability (SAT) Solver verification
+# Problem: Find x, y such that (x AND y) is true.
+
+TEMPORAL x @ 0 DEFAULT 0;
+TEMPORAL y @ 1 DEFAULT 0;
+
+PROCEDURE verify() PURE {
+    x y AND
+}
+
+# Show current values using expression syntax
+OUTPUT(x)
+OUTPUT(y)
+
+# Check if satisfied
+verify OUTPUT

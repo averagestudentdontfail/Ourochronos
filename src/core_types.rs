@@ -252,8 +252,12 @@ impl fmt::Debug for Memory {
 impl Memory {
     /// Mixing function for incremental hashing.
     /// Combines address and value into a well-distributed hash contribution.
+    /// Returns 0 for zero values to maintain consistency (zeros contribute nothing).
     #[inline]
     fn hash_mix(addr: Address, val: u64) -> u64 {
+        if val == 0 {
+            return 0; // Zero values contribute nothing to hash
+        }
         // Use a variant of FxHash mixing
         let mut h = val.wrapping_mul(0x517cc1b727220a95);
         h = h.wrapping_add(addr as u64);
@@ -289,16 +293,6 @@ impl Memory {
             self.cached_hash ^= Self::hash_mix(addr, new_val);
         }
         
-        self.cells[addr as usize] = val;
-    }
-    
-    /// Read the value at the given address.
-    pub fn read(&self, addr: Address) -> Value {
-        self.cells[addr as usize].clone()
-    }
-    
-    /// Write a value to the given address.
-    pub fn write(&mut self, addr: Address, val: Value) {
         self.cells[addr as usize] = val;
     }
     
@@ -446,5 +440,31 @@ mod tests {
         let diff = m1.diff(&m2);
         assert!(diff.contains(&5));
         assert!(diff.contains(&10));
+    }
+    
+    #[test]
+    fn test_incremental_hash_correctness() {
+        let mut mem = Memory::new();
+        
+        // After writes, cached hash should match recomputed hash
+        mem.write(0, Value::new(42));
+        assert_eq!(mem.state_hash(), mem.recompute_hash());
+        
+        mem.write(100, Value::new(123));
+        assert_eq!(mem.state_hash(), mem.recompute_hash());
+        
+        // Overwriting should work correctly
+        mem.write(0, Value::new(99));
+        assert_eq!(mem.state_hash(), mem.recompute_hash());
+        
+        // Setting back to zero
+        mem.write(0, Value::new(0));
+        assert_eq!(mem.state_hash(), mem.recompute_hash());
+        
+        // Multiple addresses
+        for i in 0..20 {
+            mem.write(i, Value::new(i as u64 * 7));
+        }
+        assert_eq!(mem.state_hash(), mem.recompute_hash());
     }
 }

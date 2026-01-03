@@ -1,29 +1,25 @@
-# String and Character Literal Example
-#
-# OUROCHRONOS now supports string and character literals.
-#
-# Character literals: 'c' pushes the ASCII code onto the stack
-# String literals: "hello" pushes each character, then the length
+# examples/strings.ouro
+# String Library Verification
 
-# Character literal examples
-'H' OUTPUT
-'e' OUTPUT
-'l' OUTPUT
-'l' OUTPUT
-'o' OUTPUT
-'!' OUTPUT
-'\n' OUTPUT
+# Test 1: Reverse
+"Hello" REV OUTPUT NEWLINE
 
-# Character with escape sequences
-'A' OUTPUT   # Regular character
-'\t' OUTPUT  # Tab
-'B' OUTPUT   # Another character
-'\n' OUTPUT  # Newline
+# Test 2: Concat
+"Hello" "World" CAT OUTPUT NEWLINE
 
-# String literals push each character then length
-# Example: "Hi" puts H, i, 2 on stack
-#          Stack bottom → H, i, 2 ← Stack top (length)
-"Hi"
-OUTPUT   # Outputs: 2 (the length)
-OUTPUT   # Outputs: i
-OUTPUT   # Outputs: H
+# Test 3: Length
+"123" STR_LEN 
+# Stack: "123" 3
+OUTPUT # Output length 3
+OUTPUT # Output string "123"
+NEWLINE
+
+# Test 4: Split
+"A,B,C" "," SPLIT
+# Stack: "A" "B" "C" 3
+# Output count
+OUTPUT NEWLINE
+# Output parts
+OUTPUT NEWLINE
+OUTPUT NEWLINE 
+OUTPUT NEWLINE

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CompletionKind","Severity"],"struct":["CompletionItem","Diagnostic","HoverInfo","LanguageAnalyzer"]};

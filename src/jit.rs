@@ -253,6 +253,12 @@ fn translate_stmt(builder: &mut FunctionBuilder, stmt: &Stmt, stats: &mut Transl
                 }
             }
         }
+        Stmt::TemporalScope { body, .. } => {
+            for s in body {
+                translate_stmt(builder, s, stats);
+            }
+            stats.unsupported += 1; // Temporal scoping semantics not yet JIT-compiled
+        }
     }
 }
 

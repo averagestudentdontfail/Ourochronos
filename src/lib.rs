@@ -40,5 +40,6 @@ pub mod analysis;
 
 mod tests;
 mod determinism_tests;
+mod property_tests;
 
 

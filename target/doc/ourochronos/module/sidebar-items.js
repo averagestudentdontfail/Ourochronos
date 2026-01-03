@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["parse_exports","parse_module_declaration"],"struct":["Module","ModuleRegistry"]};

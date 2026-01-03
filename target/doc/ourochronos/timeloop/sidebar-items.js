@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ConvergenceStatus","Direction","ExecutionMode","ParadoxDiagnosis"],"fn":["format_status"],"struct":["TimeLoop","TimeLoopConfig"]};

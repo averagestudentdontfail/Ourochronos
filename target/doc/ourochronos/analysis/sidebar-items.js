@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["find_negative_loops","is_trivially_consistent"],"struct":["NegativeLoop","TemporalDependencyGraph"]};
