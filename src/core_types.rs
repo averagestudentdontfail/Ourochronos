@@ -186,9 +186,40 @@ impl BitXor for Value {
 /// 
 /// Memory consists of MEMORY_SIZE (65536) cells, each holding a Value.
 /// Initially all cells are zero with no provenance.
-#[derive(Clone, PartialEq, Eq, Hash)]
+/// 
+/// Memory states are ordered lexicographically by cell values (address 0 first).
+/// This ordering enables deterministic selection among equal-action fixed points.
+///
+/// The hash is maintained incrementally for O(1) state_hash() lookups.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Memory {
     cells: Vec<Value>,
+    /// Incrementally updated hash of the memory state.
+    /// Uses XOR-based incremental updates on write for O(1) retrieval.
+    cached_hash: u64,
+}
+
+impl PartialOrd for Memory {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Memory {
+    /// Lexicographic comparison of memory states by cell values.
+    /// 
+    /// Compares cells from address 0 upward, returning on first difference.
+    /// This provides a total ordering for deterministic fixed-point selection.
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Compare only values, not provenance (for determinism)
+        for (a, b) in self.cells.iter().zip(other.cells.iter()) {
+            match a.val.cmp(&b.val) {
+                std::cmp::Ordering::Equal => continue,
+                other => return other,
+            }
+        }
+        std::cmp::Ordering::Equal
+    }
 }
 
 impl Default for Memory {
@@ -219,11 +250,46 @@ impl fmt::Debug for Memory {
 }
 
 impl Memory {
+    /// Mixing function for incremental hashing.
+    /// Combines address and value into a well-distributed hash contribution.
+    #[inline]
+    fn hash_mix(addr: Address, val: u64) -> u64 {
+        // Use a variant of FxHash mixing
+        let mut h = val.wrapping_mul(0x517cc1b727220a95);
+        h = h.wrapping_add(addr as u64);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+        h ^= h >> 33;
+        h
+    }
+    
     /// Create a new memory state with all cells set to zero.
     pub fn new() -> Self {
         Self {
             cells: vec![Value::ZERO; MEMORY_SIZE],
+            cached_hash: 0, // All zeros contribute 0 to hash
         }
+    }
+    
+    /// Read the value at the given address.
+    pub fn read(&self, addr: Address) -> Value {
+        self.cells[addr as usize].clone()
+    }
+    
+    /// Write a value to the given address.
+    /// 
+    /// Updates the cached hash incrementally using XOR.
+    pub fn write(&mut self, addr: Address, val: Value) {
+        let old_val = self.cells[addr as usize].val;
+        let new_val = val.val;
+        
+        // XOR out old contribution, XOR in new contribution
+        if old_val != new_val {
+            self.cached_hash ^= Self::hash_mix(addr, old_val);
+            self.cached_hash ^= Self::hash_mix(addr, new_val);
+        }
+        
+        self.cells[addr as usize] = val;
     }
     
     /// Read the value at the given address.
@@ -264,15 +330,24 @@ impl Memory {
     }
     
     /// Get a hash of the memory state (for cycle detection).
+    /// 
+    /// O(1) retrieval of the incrementally maintained hash.
+    #[inline]
     pub fn state_hash(&self) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        
-        let mut hasher = DefaultHasher::new();
-        for cell in &self.cells {
-            cell.val.hash(&mut hasher);
+        self.cached_hash
+    }
+    
+    /// Recompute the full hash from scratch.
+    /// Used for verification that incremental hash is correct.
+    #[cfg(test)]
+    pub fn recompute_hash(&self) -> u64 {
+        let mut hash = 0u64;
+        for (addr, cell) in self.cells.iter().enumerate() {
+            if cell.val != 0 {
+                hash ^= Self::hash_mix(addr as Address, cell.val);
+            }
         }
-        hasher.finish()
+        hash
     }
     
     /// Collect all provenance information from written cells.

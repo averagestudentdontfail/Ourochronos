@@ -94,6 +94,7 @@ fn main() {
                 mode,
                 seed,
                 verbose: diagnostic || action_mode,
+                frozen_inputs: Vec::new(),
             };
             
             let mut driver = TimeLoop::new(config.clone());

@@ -66,6 +66,9 @@ pub struct EpochResult {
     pub status: EpochStatus,
     /// Number of instructions executed.
     pub instructions_executed: u64,
+    /// Input values consumed during this epoch.
+    /// Used for input freezing to ensure temporal consistency.
+    pub inputs_consumed: Vec<u64>,
 }
 
 /// Configuration for the executor.
@@ -93,6 +96,8 @@ impl Default for ExecutorConfig {
 pub struct Executor {
     pub config: ExecutorConfig,
     input_cursor: usize,
+    /// Inputs consumed during the current epoch (for capture).
+    inputs_consumed: Vec<u64>,
 }
 
 impl Executor {
@@ -101,6 +106,7 @@ impl Executor {
         Self {
             config: ExecutorConfig::default(),
             input_cursor: 0,
+            inputs_consumed: Vec::new(),
         }
     }
     
@@ -109,6 +115,7 @@ impl Executor {
         Self {
             config,
             input_cursor: 0,
+            inputs_consumed: Vec::new(),
         }
     }
     
@@ -116,6 +123,7 @@ impl Executor {
     pub fn run_epoch(&mut self, program: &Program, anamnesis: &Memory) -> EpochResult {
         let mut state = VmState::new(anamnesis.clone());
         self.input_cursor = 0;
+        self.inputs_consumed.clear();
         
         match self.execute_block(&program.body, &mut state) {
             Ok(_) => {}
@@ -134,6 +142,7 @@ impl Executor {
             output: state.output,
             status: state.status,
             instructions_executed: state.instructions_executed,
+            inputs_consumed: std::mem::take(&mut self.inputs_consumed),
         }
     }
     
@@ -491,10 +500,13 @@ impl Executor {
                 let val = if self.input_cursor < self.config.input.len() {
                     let v = self.config.input[self.input_cursor];
                     self.input_cursor += 1;
+                    self.inputs_consumed.push(v);
                     v
                 } else {
                     // Read from stdin as fallback
-                    self.read_input_interactive()
+                    let v = self.read_input_interactive();
+                    self.inputs_consumed.push(v);
+                    v
                 };
                 state.stack.push(Value::new(val));
             }

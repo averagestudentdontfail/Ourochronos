@@ -136,6 +136,9 @@ pub struct TimeLoopConfig {
     pub seed: u64,
     /// Whether to print progress.
     pub verbose: bool,
+    /// Pre-specified inputs (frozen). If non-empty, these are used instead of interactive input.
+    /// This ensures deterministic execution across epochs.
+    pub frozen_inputs: Vec<u64>,
 }
 
 impl Default for TimeLoopConfig {
@@ -145,6 +148,7 @@ impl Default for TimeLoopConfig {
             mode: ExecutionMode::Standard,
             seed: 0,
             verbose: false,
+            frozen_inputs: Vec::new(),
         }
     }
 }
@@ -153,6 +157,9 @@ impl Default for TimeLoopConfig {
 pub struct TimeLoop {
     config: TimeLoopConfig,
     executor: Executor,
+    /// Inputs captured during epoch 0, frozen for replay in subsequent epochs.
+    /// This ensures the Temporal Input Invariant: External → Loop causality only.
+    captured_inputs: Option<Vec<u64>>,
 }
 
 impl TimeLoop {
@@ -161,9 +168,15 @@ impl TimeLoop {
         let mut exec_config = ExecutorConfig::default();
         exec_config.immediate_output = config.verbose;
         
+        // Use frozen inputs if provided
+        if !config.frozen_inputs.is_empty() {
+            exec_config.input = config.frozen_inputs.clone();
+        }
+        
         Self {
             config,
             executor: Executor::with_config(exec_config),
+            captured_inputs: None,
         }
     }
     
@@ -210,6 +223,10 @@ impl TimeLoop {
     }
     
     /// Standard execution with cycle detection.
+    /// 
+    /// Implements the Temporal Input Invariant: inputs are captured during epoch 0
+    /// and frozen for replay in all subsequent epochs. This ensures that external
+    /// inputs cannot be influenced by the temporal loop (External → Loop only).
     fn run_standard(&mut self, program: &Program) -> ConvergenceStatus {
         let mut anamnesis = self.create_initial_anamnesis();
         let mut seen_states: HashMap<u64, usize> = HashMap::new();
@@ -227,6 +244,15 @@ impl TimeLoop {
             
             // Run epoch
             let result = self.executor.run_epoch(program, &anamnesis);
+            
+            // On epoch 0, capture inputs and freeze them for subsequent epochs
+            if epoch == 0 && !result.inputs_consumed.is_empty() && self.captured_inputs.is_none() {
+                self.captured_inputs = Some(result.inputs_consumed.clone());
+                self.executor.config.input = result.inputs_consumed;
+                if self.config.verbose {
+                    println!("Input frozen: {:?}", self.captured_inputs.as_ref().unwrap());
+                }
+            }
             
             match result.status {
                 EpochStatus::Finished => {

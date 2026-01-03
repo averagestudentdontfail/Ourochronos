@@ -315,6 +315,26 @@ impl SeedGenerator {
     }
 }
 
+/// Selection rule for choosing among equal-action fixed points.
+/// 
+/// When multiple fixed points have the same action value, this rule
+/// determines which one is selected. This is crucial for determinism.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectionRule {
+    /// Select by minimum action only (non-deterministic tiebreaking).
+    /// Use only for backward compatibility or when non-determinism is acceptable.
+    MinAction,
+    
+    /// Canonical chronology: action first, then lexicographic memory comparison.
+    /// This guarantees identical selection across runs and platforms.
+    #[default]
+    Canonical,
+    
+    /// Prefer faster convergence: action first, then minimum epochs.
+    /// Useful when convergence speed is more important than canonical ordering.
+    MinEpochs,
+}
+
 /// Tracks causal depth and provenance for action computation.
 #[derive(Debug, Clone, Default)]
 pub struct ProvenanceMap {
@@ -542,20 +562,52 @@ impl FixedPointCandidate {
     pub fn new(memory: Memory, action: f64, epochs: usize, output: Vec<Value>, seed: Memory) -> Self {
         Self { memory, action, epochs, output, seed }
     }
+    
+    /// Compare candidates using canonical ordering (action, then memory).
+    pub fn canonical_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.action.partial_cmp(&other.action) {
+            Some(std::cmp::Ordering::Equal) | None => self.memory.cmp(&other.memory),
+            Some(ord) => ord,
+        }
+    }
+    
+    /// Compare candidates using min-epochs ordering (action, then epochs, then memory).
+    pub fn min_epochs_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.action.partial_cmp(&other.action) {
+            Some(std::cmp::Ordering::Equal) | None => {
+                match self.epochs.cmp(&other.epochs) {
+                    std::cmp::Ordering::Equal => self.memory.cmp(&other.memory),
+                    ord => ord,
+                }
+            }
+            Some(ord) => ord,
+        }
+    }
 }
 
 /// Selector for choosing among multiple fixed-point candidates.
 pub struct FixedPointSelector {
     principle: ActionPrinciple,
     candidates: Vec<FixedPointCandidate>,
+    selection_rule: SelectionRule,
 }
 
 impl FixedPointSelector {
-    /// Create a new selector with the given action principle.
+    /// Create a new selector with the given action principle (uses Canonical selection).
     pub fn new(principle: ActionPrinciple) -> Self {
         Self {
             principle,
             candidates: Vec::new(),
+            selection_rule: SelectionRule::Canonical,
+        }
+    }
+    
+    /// Create a selector with a specific selection rule.
+    pub fn with_rule(principle: ActionPrinciple, rule: SelectionRule) -> Self {
+        Self {
+            principle,
+            candidates: Vec::new(),
+            selection_rule: rule,
         }
     }
     
@@ -570,23 +622,41 @@ impl FixedPointSelector {
         self.candidates.len()
     }
     
-    /// Select the best (lowest action) candidate.
+    /// Select the best candidate according to the selection rule.
+    /// 
+    /// Returns the candidate with the lowest action. When actions are equal,
+    /// the selection rule determines the tiebreaker:
+    /// - `Canonical`: lexicographic memory comparison (deterministic)
+    /// - `MinEpochs`: fewer epochs wins, then memory comparison
+    /// - `MinAction`: action only (non-deterministic under parallelism)
     pub fn select_best(mut self) -> Option<FixedPointCandidate> {
         if self.candidates.is_empty() {
             return None;
         }
         
         self.candidates.sort_by(|a, b| {
-            a.action.partial_cmp(&b.action).unwrap_or(std::cmp::Ordering::Equal)
+            match self.selection_rule {
+                SelectionRule::Canonical => a.canonical_cmp(b),
+                SelectionRule::MinEpochs => a.min_epochs_cmp(b),
+                SelectionRule::MinAction => {
+                    a.action.partial_cmp(&b.action).unwrap_or(std::cmp::Ordering::Equal)
+                }
+            }
         });
         
         Some(self.candidates.remove(0))
     }
     
-    /// Get all candidates sorted by action (best first).
+    /// Get all candidates sorted according to the selection rule.
     pub fn all_sorted(mut self) -> Vec<FixedPointCandidate> {
         self.candidates.sort_by(|a, b| {
-            a.action.partial_cmp(&b.action).unwrap_or(std::cmp::Ordering::Equal)
+            match self.selection_rule {
+                SelectionRule::Canonical => a.canonical_cmp(b),
+                SelectionRule::MinEpochs => a.min_epochs_cmp(b),
+                SelectionRule::MinAction => {
+                    a.action.partial_cmp(&b.action).unwrap_or(std::cmp::Ordering::Equal)
+                }
+            }
         });
         self.candidates
     }

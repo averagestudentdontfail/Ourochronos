@@ -14,6 +14,7 @@ mod tests {
             mode: ExecutionMode::Standard,
             seed: 0,
             verbose: false,
+            frozen_inputs: Vec::new(),
         }
     }
     
@@ -26,6 +27,7 @@ mod tests {
             },
             seed: 0,
             verbose: false,
+            frozen_inputs: Vec::new(),
         }
     }
 
@@ -123,6 +125,7 @@ mod tests {
             max_epochs: 100, 
             seed: 0,
             verbose: false,
+            frozen_inputs: Vec::new(),
         };
         let result = TimeLoop::new(config).run(&program);
         

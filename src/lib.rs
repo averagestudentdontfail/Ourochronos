@@ -24,7 +24,7 @@ pub use parser::{tokenize, Parser};
 pub use vm::{Executor, EpochStatus};
 pub use timeloop::{TimeLoop, ConvergenceStatus, TimeLoopConfig as Config, ExecutionMode};
 pub use smt_encoder::SmtEncoder;
-pub use action::{ActionPrinciple, ActionConfig, FixedPointSelector, FixedPointCandidate, ProvenanceMap, SeedStrategy, SeedGenerator};
+pub use action::{ActionPrinciple, ActionConfig, FixedPointSelector, FixedPointCandidate, ProvenanceMap, SeedStrategy, SeedGenerator, SelectionRule};
 pub use types::{TemporalType, TypeChecker, TypeCheckResult, type_check};
 pub use module::{Module, ModuleRegistry};
 pub use memo::{EpochCache, CacheStats, DeltaTracker};
@@ -39,5 +39,6 @@ pub use package::{PackageManager, PackageManifest, Package, Dependency};
 pub mod analysis;
 
 mod tests;
+mod determinism_tests;
 
 
