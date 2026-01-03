@@ -12,6 +12,10 @@ pub mod memo;
 pub mod jit;
 pub mod optimizer;
 pub mod aot;
+pub mod lsp;
+pub mod repl;
+pub mod debugger;
+pub mod stdlib;
 
 pub use core_types::{Value, Address, Memory, MEMORY_SIZE};
 pub use ast::{OpCode, Stmt, Program};
@@ -26,7 +30,12 @@ pub use memo::{EpochCache, CacheStats, DeltaTracker};
 pub use jit::{JitCompiler, CompiledFunction, CompileStats, JitError, JitResult};
 pub use optimizer::{Optimizer, OptLevel, OptInstr, OptStats, TieredExecutor};
 pub use aot::{AotCompiler, AotStats, ObjectFile};
+pub use lsp::{LanguageAnalyzer, Diagnostic, Severity, CompletionItem, HoverInfo};
+pub use repl::{Repl, ReplConfig};
+pub use debugger::{Debugger, DebugEvent, EpochSnapshot, Breakpoint};
+pub use stdlib::StdLib;
 pub mod analysis;
 
 mod tests;
+
 
