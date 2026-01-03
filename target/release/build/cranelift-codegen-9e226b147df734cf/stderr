@@ -1,0 +1,20 @@
+Writing generated file: /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/settings.rs
+Writing generated file: /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/types.rs
+Writing generated file: /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/opcodes.rs
+Writing generated file: /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/inst_builder.rs
+Writing generated file: /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/settings-x86.rs
+Writing generated file: /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/clif_opt.isle
+Writing generated file: /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/clif_lower.isle
+Rebuilding /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_opt.rs
+Writing ISLE-generated Rust code to /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_opt.rs
+Rebuilding /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_x64.rs
+Writing ISLE-generated Rust code to /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_x64.rs
+Rebuilding /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_aarch64.rs
+Writing ISLE-generated Rust code to /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_aarch64.rs
+Rebuilding /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_s390x.rs
+Writing ISLE-generated Rust code to /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_s390x.rs
+Rebuilding /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_riscv64.rs
+Writing ISLE-generated Rust code to /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_riscv64.rs
+Rebuilding /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_pulley_shared.rs
+Writing ISLE-generated Rust code to /home/sunny/.project/Ourochronos/target/release/build/cranelift-codegen-9e226b147df734cf/out/isle_pulley_shared.rs
+fatal: not a git repository (or any of the parent directories): .git

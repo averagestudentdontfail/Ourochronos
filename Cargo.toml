@@ -9,11 +9,33 @@ license = "MIT"
 [dependencies]
 rayon = { version = "1.10", optional = true }
 num_cpus = { version = "1.16", optional = true }
+cranelift = { version = "0.112", optional = true }
+cranelift-module = { version = "0.112", optional = true }
+cranelift-jit = { version = "0.112", optional = true }
+cranelift-native = { version = "0.112", optional = true }
+cranelift-object = { version = "0.112", optional = true }
+target-lexicon = { version = "0.12", optional = true }
+object = { version = "0.36", optional = true }
 
 [features]
 default = []
 smt = []
 parallel = ["rayon", "num_cpus"]
+jit = [
+    "cranelift",
+    "cranelift-module",
+    "cranelift-jit",
+    "cranelift-native",
+    "target-lexicon",
+]
+aot = [
+    "cranelift",
+    "cranelift-module",
+    "cranelift-object",
+    "cranelift-native",
+    "target-lexicon",
+    "object",
+]
 
 [[bin]]
 name = "ourochronos"
