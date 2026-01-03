@@ -2,12 +2,8 @@
 
 *A programming language where the future computes the past.*
 
----
-
 > "The distinction between past, present and future is only a stubbornly persistent illusion."  
 > — Albert Einstein
-
----
 
 ## What Is This?
 
