@@ -16,6 +16,7 @@ pub mod lsp;
 pub mod repl;
 pub mod debugger;
 pub mod stdlib;
+pub mod package;
 
 pub use core_types::{Value, Address, Memory, MEMORY_SIZE};
 pub use ast::{OpCode, Stmt, Program};
@@ -34,6 +35,7 @@ pub use lsp::{LanguageAnalyzer, Diagnostic, Severity, CompletionItem, HoverInfo}
 pub use repl::{Repl, ReplConfig};
 pub use debugger::{Debugger, DebugEvent, EpochSnapshot, Breakpoint};
 pub use stdlib::StdLib;
+pub use package::{PackageManager, PackageManifest, Package, Dependency};
 pub mod analysis;
 
 mod tests;
