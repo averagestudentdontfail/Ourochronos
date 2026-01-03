@@ -470,7 +470,7 @@ impl<'a> Parser<'a> {
     }
     
     /// Consume next token and track position.
-    fn next_token(&mut self) -> Option<&'a Token> {
+    fn _next_token(&mut self) -> Option<&'a Token> {
         self.token_pos += 1;
         self.tokens.next()
     }
@@ -514,8 +514,9 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a declaration: MANIFEST name = value;
+    /// Parse a declaration: MANIFEST name = value;
     fn parse_declaration(&mut self) -> Result<(), String> {
-        self.tokens.next(); // Consume MANIFEST
+        // MANIFEST token already consumed by parse_program
 
         let name = match self.tokens.next() {
             Some(Token::Word(w)) => w.to_uppercase(),
@@ -677,6 +678,17 @@ impl<'a> Parser<'a> {
                     Ok(Stmt::Block(stmts))
                 } else {
                     self.emit_op(OpCode::Output)
+                }
+            },
+            
+            "EMIT" => {
+                if matches!(self.tokens.peek(), Some(Token::LParen)) {
+                    let expr_stmts = self.parse_expression()?;
+                    let mut stmts = expr_stmts;
+                    stmts.push(Stmt::Op(OpCode::Emit));
+                    Ok(Stmt::Block(stmts))
+                } else {
+                    self.emit_op(OpCode::Emit)
                 }
             },
             
@@ -1562,10 +1574,10 @@ impl<'a> Parser<'a> {
     // Helper to remap IDs involves deep traversal... complex.
     // For now, assuming NO QUOTES in imported modules or fixing simplified.
     // OR: Just implement simple remapping.
-    fn remap_quote_ids(&self, stmts: &mut [Stmt], offset: usize) {
+    fn remap_quote_ids(&self, stmts: &mut [Stmt], _offset: usize) {
          for stmt in stmts {
              match stmt {
-                 Stmt::Push(val) => {
+                 Stmt::Push(_val) => {
                       // How do we know it's a quote ID?
                       // We don't! It's just a number.
                       // This is the problem with typeless stack.

@@ -291,7 +291,7 @@ impl StdLib {
                 effects: vec![],
                 body: vec![
                     Stmt::Push(Value::new(10)), // ASCII newline
-                    Stmt::Op(OpCode::Output),
+                    Stmt::Op(OpCode::Emit),
                 ],
             },
             // SPACE(-- ) Output a space
@@ -302,7 +302,7 @@ impl StdLib {
                 effects: vec![],
                 body: vec![
                     Stmt::Push(Value::new(32)), // ASCII space
-                    Stmt::Op(OpCode::Output),
+                    Stmt::Op(OpCode::Emit),
                 ],
             },
         ]

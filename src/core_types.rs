@@ -39,6 +39,21 @@ impl fmt::Display for Value {
     }
 }
 
+/// An item in the program output buffer.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum OutputItem {
+    /// A numeric value output (e.g., from OUTPUT opcode).
+    Val(Value),
+    /// A single character output (e.g., from EMIT opcode).
+    Char(u8),
+}
+
+impl Default for OutputItem {
+    fn default() -> Self {
+        OutputItem::Val(Value::ZERO)
+    }
+}
+
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))

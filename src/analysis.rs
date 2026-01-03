@@ -473,7 +473,7 @@ impl TDGBuilder {
                 self.stack.push(AbstractProvenance::Const);
             }
             
-            OpCode::Output => {
+            OpCode::Output | OpCode::Emit => {
                 self.stack.pop();
             }
 

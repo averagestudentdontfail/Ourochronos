@@ -4,10 +4,10 @@
 
 use std::io::{self, Write};
 
-use crate::ast::Program;
+
 use crate::parser::Parser;
 use crate::timeloop::{TimeLoop, TimeLoopConfig, ConvergenceStatus};
-use crate::core_types::{Memory, Value};
+use crate::core_types::Memory;
 
 /// REPL configuration.
 #[derive(Debug, Clone)]
@@ -163,7 +163,10 @@ impl Repl {
                 if !output.is_empty() {
                     print!("Output: ");
                     for val in output {
-                        print!("{} ", val.val);
+                        match val {
+                            crate::core_types::OutputItem::Val(v) => print!("[{}]", v.val),
+                            crate::core_types::OutputItem::Char(c) => print!("{}", *c as char),
+                        }
                     }
                     println!();
                 }

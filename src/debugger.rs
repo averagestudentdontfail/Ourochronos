@@ -3,7 +3,7 @@
 //! Provides epoch stepping, memory inspection, and temporal causality visualization.
 
 use crate::ast::Program;
-use crate::core_types::{Memory, Value};
+use crate::core_types::{Memory, Value, OutputItem};
 use crate::vm::{Executor, ExecutorConfig, EpochStatus};
 
 /// Debug event types.
@@ -50,7 +50,7 @@ pub struct EpochSnapshot {
     /// Memory after epoch.
     pub present: Memory,
     /// Output produced.
-    pub output: Vec<Value>,
+    pub output: Vec<OutputItem>,
     /// Status.
     pub status: EpochStatus,
 }
@@ -66,7 +66,7 @@ pub struct Debugger {
     /// Event log.
     events: Vec<DebugEvent>,
     /// Maximum history size.
-    max_history: usize,
+    _max_history: usize,
 }
 
 impl Default for Debugger {
@@ -83,7 +83,7 @@ impl Debugger {
             current_index: 0,
             breakpoints: Vec::new(),
             events: Vec::new(),
-            max_history: 1000,
+            _max_history: 1000,
         }
     }
     

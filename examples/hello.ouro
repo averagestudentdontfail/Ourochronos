@@ -59,8 +59,8 @@ IF {
     
     # 4. Output
     # We successfully stabilized. Now print valid timeline.
-    H OUTPUT e OUTPUT l OUTPUT l OUTPUT o OUTPUT Sp OUTPUT
-    W OUTPUT o OUTPUT r OUTPUT l OUTPUT d OUTPUT Bang OUTPUT
+    H EMIT e EMIT l EMIT l EMIT o EMIT Sp EMIT
+    W EMIT o EMIT r EMIT l EMIT d EMIT Bang EMIT
     
 } ELSE {
     # 5. Seeding (The "Write" phase of the loop)

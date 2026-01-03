@@ -365,7 +365,7 @@ impl SmtEncoder {
                 stack.push(input_var);
             }
             
-            OpCode::Output => {
+            OpCode::Output | OpCode::Emit => {
                 stack.pop();
             }
             

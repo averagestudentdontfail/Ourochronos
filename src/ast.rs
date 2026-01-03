@@ -242,6 +242,10 @@ pub enum OpCode {
     /// Output a value.
     /// Stack: ( value -- )
     Output,
+    
+    /// Output a value as a character.
+    /// Stack: ( char -- )
+    Emit,
 }
 
 impl OpCode {
@@ -286,6 +290,7 @@ impl OpCode {
             OpCode::Store => "STORE",
             OpCode::Input => "INPUT",
             OpCode::Output => "OUTPUT",
+            OpCode::Emit => "EMIT",
             OpCode::Roll => "ROLL",
             OpCode::Reverse => "REVERSE",
             OpCode::Exec => "EXEC",
@@ -303,7 +308,7 @@ impl OpCode {
     pub fn stack_effect(&self) -> (usize, usize) {
         match self {
             OpCode::Nop | OpCode::Halt | OpCode::Paradox => (0, 0),
-            OpCode::Pop | OpCode::Output => (1, 0),
+            OpCode::Pop | OpCode::Output | OpCode::Emit => (1, 0),
             OpCode::Dup => (1, 2),
             OpCode::Swap => (2, 2),
             OpCode::Over => (2, 3),

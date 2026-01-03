@@ -12,7 +12,7 @@
 //! and selects the solution with minimum action (cost), preferring non-trivial,
 //! output-producing solutions.
 
-use crate::core_types::{Memory, Address, Value};
+use crate::core_types::{Memory, Address, Value, OutputItem};
 use crate::ast::Program;
 use crate::vm::{Executor, ExecutorConfig, EpochStatus};
 use crate::action::{ActionConfig, ActionPrinciple, FixedPointSelector};
@@ -27,7 +27,7 @@ pub enum ConvergenceStatus {
         /// The consistent memory state.
         memory: Memory,
         /// Output produced.
-        output: Vec<Value>,
+        output: Vec<OutputItem>,
         /// Number of epochs to converge.
         epochs: usize,
     },
@@ -782,8 +782,11 @@ pub fn format_status(status: &ConvergenceStatus) -> String {
         ConvergenceStatus::Consistent { epochs, output, .. } => {
             let mut s = format!("CONSISTENT after {} epoch(s)\n", epochs);
             if !output.is_empty() {
-                s.push_str(&format!("Output: {:?}\n", 
-                    output.iter().map(|v| v.val).collect::<Vec<_>>()));
+                let formatted: Vec<String> = output.iter().map(|item| match item {
+                    OutputItem::Val(v) => v.val.to_string(),
+                    OutputItem::Char(c) => (*c as char).to_string(),
+                }).collect();
+                s.push_str(&format!("Output: {:?}\n", formatted));
             }
             s
         }

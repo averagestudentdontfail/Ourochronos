@@ -110,10 +110,9 @@ fn main() {
                     if !output.is_empty() {
                          // Print raw output without label
                          for val in output {
-                              if val.val >= 32 && val.val < 127 {
-                                   print!("{}", val.val as u8 as char);
-                              } else {
-                                   print!("[{}]", val.val);
+                              match val {
+                                  ourochronos::OutputItem::Val(v) => print!("[{}]", v.val),
+                                  ourochronos::OutputItem::Char(c) => print!("{}", c as char),
                               }
                          }
                          println!(); // Newline

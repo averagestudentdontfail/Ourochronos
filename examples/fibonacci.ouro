@@ -1,0 +1,21 @@
+MANIFEST LIMIT = 100;
+
+# "Fibonacci Sequence:" OUTPUT
+
+# Initialize: 0 1
+0 1
+
+WHILE { DUP LIMIT LT } {
+    # Stack: a b
+    DUP OUTPUT SPACE
+    
+    # Calculate next: a b -> b (a+b)
+    SWAP      # b a
+    OVER      # b a b
+    ADD       # b (a+b)
+}
+
+# Cleanup
+DROP DROP
+NEWLINE
+# "Done." OUTPUT

@@ -432,7 +432,7 @@ impl TypeChecker {
                 self.stack.push(TemporalType::Pure);
             }
             
-            OpCode::Output => {
+            OpCode::Output | OpCode::Emit => {
                 let ty = self.pop_type();
                 if ty == TemporalType::Temporal && !self.in_temporal_branch {
                     // Outputting temporal value: this is significant

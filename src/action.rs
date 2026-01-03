@@ -27,7 +27,7 @@
 //!
 //! The runtime explores multiple fixed points and selects the one with minimum action.
 
-use crate::core_types::{Memory, Address, Value};
+use crate::core_types::{Memory, Address, Value, OutputItem};
 use crate::provenance::Provenance;
 use std::collections::HashMap;
 
@@ -552,14 +552,14 @@ pub struct FixedPointCandidate {
     /// Number of epochs to reach this fixed point.
     pub epochs: usize,
     /// Output produced during execution.
-    pub output: Vec<Value>,
+    pub output: Vec<OutputItem>,
     /// The seed that led to this fixed point.
     pub seed: Memory,
 }
 
 impl FixedPointCandidate {
     /// Create a new candidate.
-    pub fn new(memory: Memory, action: f64, epochs: usize, output: Vec<Value>, seed: Memory) -> Self {
+    pub fn new(memory: Memory, action: f64, epochs: usize, output: Vec<OutputItem>, seed: Memory) -> Self {
         Self { memory, action, epochs, output, seed }
     }
     
@@ -612,7 +612,7 @@ impl FixedPointSelector {
     }
     
     /// Add a candidate fixed point.
-    pub fn add_candidate(&mut self, memory: Memory, epochs: usize, output: Vec<Value>, seed: Memory) {
+    pub fn add_candidate(&mut self, memory: Memory, epochs: usize, output: Vec<OutputItem>, seed: Memory) {
         let action = self.principle.compute(&memory, &seed, output.len());
         self.candidates.push(FixedPointCandidate::new(memory, action, epochs, output, seed));
     }
@@ -719,7 +719,7 @@ mod tests {
         // Better candidate
         let mut better = Memory::new();
         better.write(0, Value::new(42));
-        selector.add_candidate(better.clone(), 2, vec![Value::new(42)], seed.clone());
+        selector.add_candidate(better.clone(), 2, vec![OutputItem::Val(Value::new(42))], seed.clone());
         
         let best = selector.select_best().unwrap();
         assert_eq!(best.memory.read(0).val, 42);

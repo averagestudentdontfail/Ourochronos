@@ -6,7 +6,7 @@
 //! The fixed-point search (in timeloop.rs) repeatedly runs epochs until
 //! Present = Anamnesis (temporal consistency achieved).
 
-use crate::core_types::{Value, Address, Memory};
+use crate::core_types::{Value, Address, Memory, OutputItem};
 use crate::ast::{OpCode, Stmt, Program};
 use crate::provenance::Provenance;
 use std::io::{self, Write, BufRead};
@@ -34,7 +34,7 @@ pub struct VmState {
     /// Anamnesis memory (read-only, from the "future").
     pub anamnesis: Memory,
     /// Output buffer.
-    pub output: Vec<Value>,
+    pub output: Vec<OutputItem>,
     /// Execution status.
     pub status: EpochStatus,
     /// Instruction count (for gas limiting).
@@ -61,7 +61,7 @@ pub struct EpochResult {
     /// The final present memory.
     pub present: Memory,
     /// Output produced during the epoch.
-    pub output: Vec<Value>,
+    pub output: Vec<OutputItem>,
     /// Terminal status.
     pub status: EpochStatus,
     /// Number of instructions executed.
@@ -809,7 +809,19 @@ impl Executor {
                     println!("OUTPUT: {} [deps: {:?}]", val.val, val.prov);
                 }
                 
-                state.output.push(val);
+                state.output.push(OutputItem::Val(val));
+            }
+
+            OpCode::Emit => {
+                let val = self.pop(state)?;
+                let char_val = (val.val % 256) as u8;
+                
+                if self.config.immediate_output {
+                    // For immediate output in debug mode, maybe show explicit EMIT
+                    println!("EMIT: '{}' ({})", char_val as char, char_val);
+                }
+                
+                state.output.push(OutputItem::Char(char_val));
             }
             
             // Array/Memory Operations

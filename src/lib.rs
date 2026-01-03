@@ -18,7 +18,7 @@ pub mod debugger;
 pub mod stdlib;
 pub mod package;
 
-pub use core_types::{Value, Address, Memory, MEMORY_SIZE};
+pub use core_types::{Value, Address, Memory, OutputItem, MEMORY_SIZE};
 pub use ast::{OpCode, Stmt, Program};
 pub use parser::{tokenize, Parser};
 pub use vm::{Executor, EpochStatus};

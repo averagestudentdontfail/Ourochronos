@@ -4,7 +4,7 @@
 //! by caching the results of previously computed states.
 
 use std::collections::HashMap;
-use crate::core_types::{Memory, Value};
+use crate::core_types::{Memory, OutputItem};
 use crate::vm::EpochStatus;
 
 /// The result of a memoized epoch execution.
@@ -13,7 +13,7 @@ pub struct MemoizedResult {
     /// The resulting present state.
     pub present: Memory,
     /// Output produced.
-    pub output: Vec<Value>,
+    pub output: Vec<OutputItem>,
     /// Status of execution.
     pub status: EpochStatus,
 }
@@ -163,7 +163,7 @@ mod tests {
         
         let result = MemoizedResult {
             present: Memory::new(),
-            output: vec![Value::new(42)],
+            output: vec![OutputItem::Val(Value::new(42))],
             status: EpochStatus::Finished,
         };
         
